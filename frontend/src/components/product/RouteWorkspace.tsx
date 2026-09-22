@@ -191,29 +191,9 @@ export function RouteWorkspace() {
     };
   });
 
-  const mapHelpPoints: MapHelpPoint[] = helpPoints.map((hp, idx) => {
-    let cat: MapHelpPoint["category"] = "support";
-    if (hp.category.includes("POLICE")) cat = "police";
-    else if (hp.category.includes("HOSPITAL")) cat = "hospital";
-    else if (hp.category.includes("PHARMACY")) cat = "pharmacy";
-    else if (hp.category.includes("TRANSIT")) cat = "transport";
-
-    // Place within pilot bounding box for map display
-    const offsetLng = (idx % 3) * 0.003;
-    const offsetLat = Math.floor(idx / 3) * 0.002;
-    const coord: [number, number] = [
-      Math.min(72.845, Math.max(72.825, origin.longitude + offsetLng)),
-      Math.min(19.06, Math.max(19.048, origin.latitude + offsetLat)),
-    ];
-
-    return {
-      id: hp.reference,
-      name: hp.sponsor_disclosure || `${hp.category.replace(/_/g, " ")} (${hp.reference.slice(0, 8)})`,
-      category: cat,
-      coordinate: coord,
-      freshness: hp.verification_status === "VERIFIED" ? "Verified" : hp.verification_status,
-    };
-  });
+  // The public nearby endpoint deliberately does not expose exact coordinates.
+  // Do not manufacture positions: details remain available in the selected/help views.
+  const mapHelpPoints: MapHelpPoint[] = [];
 
   const selectedHelpPoint = helpPoints.find((hp) => hp.reference === selectedHelpPointRef);
 
@@ -519,7 +499,7 @@ export function RouteWorkspace() {
                       }`}
                     >
                       <span>Segment {sIdx + 1} ({seg.length_meters}m)</span>
-                      <span className={`ml-2 text-[10px] ${segBand.color}`}>
+                      <span className="ml-2 text-[10px] text-[#53615a]">
                         ● {segBand.label}
                       </span>
                     </button>

@@ -1,4 +1,4 @@
-import { api, generateIdempotencyKey, getEphemeralSessionId } from "./client";
+import { api, apiBaseUrl, generateIdempotencyKey, getEphemeralSessionId } from "./client";
 import type {
   DeviationResponseRequest,
   DeviationResponseResult,
@@ -31,6 +31,10 @@ export async function getTrip(tripId: string, sessionId?: string): Promise<TripP
     },
     false
   );
+}
+
+export function tripStreamUrl(tripId: string, sessionId = getEphemeralSessionId()): string {
+  return `${apiBaseUrl}/trips/${encodeURIComponent(tripId)}/stream?session_id=${encodeURIComponent(sessionId)}`;
 }
 
 export async function checkInTrip(

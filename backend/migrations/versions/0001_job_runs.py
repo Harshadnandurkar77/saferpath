@@ -15,6 +15,9 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Required before later revisions create geometry/geography columns and GIST indexes.
+    # Managed providers may require this to be enabled by a database administrator.
+    op.execute("CREATE EXTENSION IF NOT EXISTS postgis")
     op.create_table(
         "job_runs",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),

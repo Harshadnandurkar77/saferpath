@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ProductShell } from "./ProductSurface";
 import { consents, createConsent, profile, updateProfile, withdrawConsent } from "../../api/identity";
-import type { Consent, ConsentPurpose, Profile, TravellerType } from "../../api/types";
+import type { Consent, ConsentPurpose, TravellerType } from "../../api/types";
 import { useAuth } from "../../context/AuthContext";
 import { CheckCircle2, Globe, LogOut, Shield, User } from "lucide-react";
 

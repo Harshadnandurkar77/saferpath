@@ -9,12 +9,11 @@ import {
   RefreshCw,
   Share2,
   Shield,
-  ShieldAlert,
   StopCircle,
   UserCheck,
   UserX,
 } from "lucide-react";
-import { checkInTrip, getTrip, respondToDeviation, stopTrip } from "../../api/trips";
+import { checkInTrip, getTrip, respondToDeviation, stopTrip, tripStreamUrl } from "../../api/trips";
 import {
   createSharingGrant,
   createTrustedContact,
@@ -43,6 +42,7 @@ export function TripsWorkspace() {
   const [isLoading, setIsLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [networkDegraded, setNetworkDegraded] = useState(false);
 
   // Trusted contact form state
   const [isAddContactOpen, setIsAddContactOpen] = useState(false);
@@ -78,10 +78,14 @@ export function TripsWorkspace() {
     void fetchContacts();
     if (activeTripId) {
       void fetchTrip(activeTripId);
+      const stream = new EventSource(tripStreamUrl(activeTripId));
+      stream.onopen = () => setNetworkDegraded(false);
+      stream.onmessage = () => void fetchTrip(activeTripId);
+      stream.onerror = () => setNetworkDegraded(true);
       const interval = setInterval(() => {
         void fetchTrip(activeTripId);
       }, 10000);
-      return () => clearInterval(interval);
+      return () => { stream.close(); clearInterval(interval); };
     }
   }, [activeTripId, fetchContacts, fetchTrip]);
 
@@ -289,6 +293,12 @@ export function TripsWorkspace() {
       {errorMessage && (
         <div role="alert" className="mb-6 border-l-4 border-[#b6433d] bg-[#fde8e7] p-4 text-xs font-medium text-[#b6433d]">
           {errorMessage}
+        </div>
+      )}
+
+      {networkDegraded && (
+        <div role="status" className="mb-6 border-l-4 border-[#9a6400] bg-[#fcf3d9] p-4 text-xs text-[#53615a]">
+          Live trip updates are unavailable; SaferPath is refreshing this trip from the server every 10 seconds.
         </div>
       )}
 

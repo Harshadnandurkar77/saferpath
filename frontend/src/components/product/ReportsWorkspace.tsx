@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
-import { CheckCircle2, Clock, FileText, Info, Plus, ShieldAlert, UploadCloud, X } from "lucide-react";
-import { authorizeEvidenceUpload, completeEvidenceUpload, createReport, getReport, REPORT_CATEGORIES } from "../../api/reports";
+import { useState } from "react";
+import { CheckCircle2, Clock, FileText, Info, Plus, UploadCloud, X } from "lucide-react";
+import { authorizeEvidenceUpload, completeEvidenceUpload, createReport, REPORT_CATEGORIES } from "../../api/reports";
 import type { CoarseArea, PublicationIntent, ReportCategory, ReportResponse } from "../../api/types";
 
 const COARSE_AREAS: { id: CoarseArea; label: string }[] = [
@@ -23,34 +23,6 @@ export function ReportsWorkspace() {
   const [coarseArea, setCoarseArea] = useState<CoarseArea>("MUMBAI_WEST");
   const [publicationIntent, setPublicationIntent] = useState<PublicationIntent>("PUBLIC_CONTEXT");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-
-  // Load user's saved report IDs from localStorage and query backend for current status
-  useEffect(() => {
-    const loadUserReports = async () => {
-      try {
-        const stored = localStorage.getItem("saferpath_user_reports");
-        if (!stored) return;
-        const ids: string[] = JSON.parse(stored);
-        if (!Array.isArray(ids) || ids.length === 0) return;
-
-        const results = await Promise.allSettled(
-          ids.slice(0, 10).map((id) => getReport(id))
-        );
-
-        const loaded: ReportResponse[] = [];
-        for (const res of results) {
-          if (res.status === "fulfilled") {
-            loaded.push(res.value);
-          }
-        }
-        setReports(loaded);
-      } catch {
-        // Non-blocking
-      }
-    };
-
-    void loadUserReports();
-  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -96,14 +68,6 @@ export function ReportsWorkspace() {
           // Evidence upload failure is non-fatal for the report itself
         }
       }
-
-      // Persist reference locally
-      const stored = localStorage.getItem("saferpath_user_reports");
-      const currentIds: string[] = stored ? JSON.parse(stored) : [];
-      localStorage.setItem(
-        "saferpath_user_reports",
-        JSON.stringify([newReport.report_id, ...currentIds.filter((id) => id !== newReport.report_id)])
-      );
 
       setReports((prev) => [newReport, ...prev.filter((r) => r.report_id !== newReport.report_id)]);
       setSuccessReference(newReport.reference);
@@ -356,9 +320,7 @@ export function ReportsWorkspace() {
           <div className="border border-[#d8ddd7] bg-[#fffefb] p-8 text-center text-sm text-[#53615a]">
             <FileText className="mx-auto h-8 w-8 text-[#62706a]" />
             <p className="mt-3 font-semibold text-[#14231d]">No reports submitted yet in this session</p>
-            <p className="mt-1 text-xs text-[#62706a]">
-              Reports you submit will be tracked here so you can view their moderation progression.
-            </p>
+            <p className="mt-1 text-xs text-[#62706a]">Reports created during this view appear here. A server-side report-history endpoint is not available yet.</p>
           </div>
         )}
       </section>

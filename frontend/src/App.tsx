@@ -11,6 +11,7 @@ import { PrivacyPage, ProfilePage } from "./components/product/IdentityPages";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { requestCode, updateProfile } from "./api/identity";
 import { Shield } from "lucide-react";
+import type { TravellerType } from "./api/types";
 
 function Landing() {
   return (
