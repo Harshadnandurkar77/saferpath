@@ -1,7 +1,6 @@
 ﻿import json
-import os
 
-with open('openapi.json', 'r', encoding='utf-8') as f:
+with open('openapi.json', encoding='utf-8') as f:
     spec = json.load(f)
 
 markdown = ["# SaferPath Backend Endpoints\n"]

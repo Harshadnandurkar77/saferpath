@@ -8,7 +8,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.models.identity import AuthenticationCode, ConsentRecord, NotificationPreference, User, UserProfile, UserSession
+from app.models.identity import (
+    AuthenticationCode,
+    ConsentRecord,
+    User,
+    UserProfile,
+    UserSession,
+)
 
 
 class AuthenticationFailure(Exception):
@@ -24,8 +30,13 @@ class FixtureAuthenticationCodeProvider:
     def __init__(self) -> None:
         self.last_code: str | None = None
 
+    def generate(self) -> str:
+        return f"{secrets.randbelow(1_000_000):06d}"
+
     def send(self, _email: str, code: str) -> None:
         self.last_code = code
+        if get_settings().app_env.lower() not in {"production", "release"}:
+            print(f"[DEV OTP] {code}", flush=True)
 
 
 class AuthenticationService:
@@ -38,7 +49,7 @@ class AuthenticationService:
         recent = db.scalar(select(AuthenticationCode).where(AuthenticationCode.email_key == email_key).order_by(AuthenticationCode.created_at.desc()))
         if recent and recent.created_at and recent.created_at > now - timedelta(seconds=get_settings().auth_code_resend_cooldown_seconds):
             return  # neutral response and resend bound
-        code = f"{secrets.randbelow(1_000_000):06d}"
+        code = self.provider.generate() if hasattr(self.provider, "generate") else f"{secrets.randbelow(1_000_000):06d}"
         db.add(AuthenticationCode(email_key=email_key, code_hash=protected(code), expires_at=now + timedelta(minutes=get_settings().auth_code_ttl_minutes)))
         db.flush()
         self.provider.send(email, code)

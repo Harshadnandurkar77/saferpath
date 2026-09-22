@@ -12,8 +12,17 @@ dist
 dist-ssr
 *.local
 
-# Backend local configuration and runtime artifacts
+# Environment files
+.env
+.env.*
+!.env.example
 backend/.env
+frontend/.env
+*.env
+*.env.*
+!*.env.example
+
+# Backend local configuration and runtime artifacts
 backend/.venv/
 backend/**/__pycache__/
 backend/.pytest_cache/

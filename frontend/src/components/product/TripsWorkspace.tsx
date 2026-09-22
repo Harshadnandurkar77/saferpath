@@ -13,7 +13,12 @@ import {
   UserCheck,
   UserX,
 } from "lucide-react";
-import { checkInTrip, getTrip, respondToDeviation, stopTrip, tripStreamUrl } from "../../api/trips";
+import {
+  checkInTrip,
+  getTrip,
+  respondToDeviation,
+  stopTrip,
+} from "../../api/trips";
 import {
   createSharingGrant,
   createTrustedContact,
@@ -22,7 +27,10 @@ import {
   revokeTrustedContact,
   verifyTrustedContact,
 } from "../../api/trustedContacts";
-import { createEmergencyHandoff, submitEmergencyHandoffAction } from "../../api/emergency";
+import {
+  createEmergencyHandoff,
+  submitEmergencyHandoffAction,
+} from "../../api/emergency";
 import type {
   SharingGrantResponse,
   TripPollResponse,
@@ -32,7 +40,7 @@ import { Link } from "react-router-dom";
 
 export function TripsWorkspace() {
   const [activeTripId, setActiveTripId] = useState<string | null>(() =>
-    sessionStorage.getItem("saferpath_current_trip_id")
+    sessionStorage.getItem("saferpath_current_trip_id"),
   );
   const [tripState, setTripState] = useState<TripPollResponse | null>(null);
   const [contacts, setContacts] = useState<TrustedContactResponse[]>([]);
@@ -42,21 +50,27 @@ export function TripsWorkspace() {
   const [isLoading, setIsLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [networkDegraded, setNetworkDegraded] = useState(false);
 
   // Trusted contact form state
   const [isAddContactOpen, setIsAddContactOpen] = useState(false);
   const [contactName, setContactName] = useState("");
   const [contactReference, setContactReference] = useState("");
   const [relationship, setRelationship] = useState("Family");
-  const [verificationInput, setVerificationInput] = useState<{ id: string; token: string } | null>(null);
+  const [verificationInput, setVerificationInput] = useState<{
+    id: string;
+    token: string;
+  } | null>(null);
 
   // Poll trip data from backend
   const fetchTrip = useCallback(async (id: string) => {
     try {
       const data = await getTrip(id);
       setTripState(data);
-      if (data.status === "STOPPED" || data.status === "COMPLETED" || data.status === "EXPIRED") {
+      if (
+        data.status === "STOPPED" ||
+        data.status === "COMPLETED" ||
+        data.status === "EXPIRED"
+      ) {
         sessionStorage.removeItem("saferpath_current_trip_id");
       }
     } catch {
@@ -78,14 +92,10 @@ export function TripsWorkspace() {
     void fetchContacts();
     if (activeTripId) {
       void fetchTrip(activeTripId);
-      const stream = new EventSource(tripStreamUrl(activeTripId));
-      stream.onopen = () => setNetworkDegraded(false);
-      stream.onmessage = () => void fetchTrip(activeTripId);
-      stream.onerror = () => setNetworkDegraded(true);
       const interval = setInterval(() => {
         void fetchTrip(activeTripId);
       }, 10000);
-      return () => { stream.close(); clearInterval(interval); };
+      return () => clearInterval(interval);
     }
   }, [activeTripId, fetchContacts, fetchTrip]);
 
@@ -100,7 +110,9 @@ export function TripsWorkspace() {
       setActionMessage("Check-in confirmed with server. Status: OK.");
       await fetchTrip(activeTripId);
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : "Failed to record check-in.");
+      setErrorMessage(
+        err instanceof Error ? err.message : "Failed to record check-in.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -109,7 +121,8 @@ export function TripsWorkspace() {
   // Handle Stop Trip
   const handleStopTrip = async () => {
     if (!activeTripId) return;
-    if (!window.confirm("Are you sure you want to end this active journey?")) return;
+    if (!window.confirm("Are you sure you want to end this active journey?"))
+      return;
     setIsLoading(true);
     setActionMessage(null);
     setErrorMessage(null);
@@ -120,7 +133,9 @@ export function TripsWorkspace() {
       setTripState(null);
       setActionMessage("Trip completed and recorded.");
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : "Failed to stop trip.");
+      setErrorMessage(
+        err instanceof Error ? err.message : "Failed to stop trip.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -128,7 +143,7 @@ export function TripsWorkspace() {
 
   // Handle Deviation Response
   const handleDeviationResponse = async (
-    resp: "CONFIRM_ROUTE_CHANGE" | "REJECT_ROUTE_CHANGE" | "UNSURE"
+    resp: "CONFIRM_ROUTE_CHANGE" | "REJECT_ROUTE_CHANGE" | "UNSURE",
   ) => {
     if (!activeTripId) return;
     setIsLoading(true);
@@ -137,7 +152,11 @@ export function TripsWorkspace() {
       setActionMessage(`Response recorded: ${resp.replace(/_/g, " ")}`);
       await fetchTrip(activeTripId);
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : "Failed to record deviation response.");
+      setErrorMessage(
+        err instanceof Error
+          ? err.message
+          : "Failed to record deviation response.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -160,10 +179,14 @@ export function TripsWorkspace() {
       setContactName("");
       setContactReference("");
       if (newContact.verification_token) {
-        setActionMessage(`Contact added. Verification token for testing: ${newContact.verification_token}`);
+        setActionMessage(
+          `Contact added. Verification token for testing: ${newContact.verification_token}`,
+        );
       }
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : "Failed to add contact.");
+      setErrorMessage(
+        err instanceof Error ? err.message : "Failed to add contact.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -175,11 +198,17 @@ export function TripsWorkspace() {
     setErrorMessage(null);
     try {
       const verified = await verifyTrustedContact(contactId, token);
-      setContacts((prev) => prev.map((c) => (c.contact_id === verified.contact_id ? verified : c)));
+      setContacts((prev) =>
+        prev.map((c) => (c.contact_id === verified.contact_id ? verified : c)),
+      );
       setVerificationInput(null);
       setActionMessage("Trusted contact verified.");
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : "Invalid or expired verification token.");
+      setErrorMessage(
+        err instanceof Error
+          ? err.message
+          : "Invalid or expired verification token.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -194,7 +223,9 @@ export function TripsWorkspace() {
       setContacts((prev) => prev.filter((c) => c.contact_id !== contactId));
       setActionMessage("Trusted contact revoked.");
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : "Failed to revoke contact.");
+      setErrorMessage(
+        err instanceof Error ? err.message : "Failed to revoke contact.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -214,7 +245,9 @@ export function TripsWorkspace() {
       setGrants((prev) => [grant, ...prev]);
       setActionMessage("Sharing grant created with STATUS_ONLY scope.");
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : "Could not create sharing grant.");
+      setErrorMessage(
+        err instanceof Error ? err.message : "Could not create sharing grant.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -228,7 +261,9 @@ export function TripsWorkspace() {
       setGrants((prev) => prev.filter((g) => g.grant_id !== grantId));
       setActionMessage("Sharing grant revoked.");
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : "Failed to revoke sharing grant.");
+      setErrorMessage(
+        err instanceof Error ? err.message : "Failed to revoke sharing grant.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -237,7 +272,8 @@ export function TripsWorkspace() {
   // Official Emergency Handoff
   const handleEmergencyHandoff = async () => {
     if (!activeTripId) return;
-    if (!window.confirm("Initiate official emergency assistance handoff?")) return;
+    if (!window.confirm("Initiate official emergency assistance handoff?"))
+      return;
     setIsLoading(true);
     try {
       const handoff = await createEmergencyHandoff({
@@ -251,7 +287,9 @@ export function TripsWorkspace() {
       setActionMessage("Emergency handoff recorded. Connecting to 112...");
       window.location.href = "tel:112";
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : "Emergency handoff failed.");
+      setErrorMessage(
+        err instanceof Error ? err.message : "Emergency handoff failed.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -269,7 +307,8 @@ export function TripsWorkspace() {
             Trips & Trusted Contacts
           </h1>
           <p className="mt-1 text-xs text-[#62706a]">
-            A calm check-in companion. Never continuous surveillance or unconsented location broadcasting.
+            A calm check-in companion. Never continuous surveillance or
+            unconsented location broadcasting.
           </p>
         </div>
         {activeTripId && (
@@ -285,20 +324,20 @@ export function TripsWorkspace() {
 
       {/* ── Status Messages ── */}
       {actionMessage && (
-        <div role="status" className="mb-6 border-l-4 border-[#16756c] bg-[#dcefe9] p-4 text-xs font-medium text-[#075b53]">
+        <div
+          role="status"
+          className="mb-6 border-l-4 border-[#16756c] bg-[#dcefe9] p-4 text-xs font-medium text-[#075b53]"
+        >
           {actionMessage}
         </div>
       )}
 
       {errorMessage && (
-        <div role="alert" className="mb-6 border-l-4 border-[#b6433d] bg-[#fde8e7] p-4 text-xs font-medium text-[#b6433d]">
+        <div
+          role="alert"
+          className="mb-6 border-l-4 border-[#b6433d] bg-[#fde8e7] p-4 text-xs font-medium text-[#b6433d]"
+        >
           {errorMessage}
-        </div>
-      )}
-
-      {networkDegraded && (
-        <div role="status" className="mb-6 border-l-4 border-[#9a6400] bg-[#fcf3d9] p-4 text-xs text-[#53615a]">
-          Live trip updates are unavailable; SaferPath is refreshing this trip from the server every 10 seconds.
         </div>
       )}
 
@@ -322,7 +361,8 @@ export function TripsWorkspace() {
                   </h3>
                 </div>
                 <p className="mt-1 text-xs text-[#62706a]">
-                  Trip ID: {tripState.trip_id} · Sharing: {tripState.sharing_scope}
+                  Trip ID: {tripState.trip_id} · Sharing:{" "}
+                  {tripState.sharing_scope}
                 </p>
               </div>
 
@@ -356,11 +396,14 @@ export function TripsWorkspace() {
                       Route Corridor Deviation Detected
                     </p>
                     <p className="mt-0.5 text-[#53615a]">
-                      You appear to have moved away from the planned corridor. Are you okay?
+                      You appear to have moved away from the planned corridor.
+                      Are you okay?
                     </p>
                     <div className="mt-3 flex flex-wrap gap-2">
                       <button
-                        onClick={() => void handleDeviationResponse("CONFIRM_ROUTE_CHANGE")}
+                        onClick={() =>
+                          void handleDeviationResponse("CONFIRM_ROUTE_CHANGE")
+                        }
                         className="bg-[#16756c] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#075b53]"
                       >
                         I'm taking an alternate route
@@ -386,24 +429,39 @@ export function TripsWorkspace() {
             {/* Trip Details Grid */}
             <div className="mt-6 grid grid-cols-2 gap-4 border-t border-[#d8ddd7] pt-5 sm:grid-cols-4">
               <div>
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-[#62706a]">Planned Arrival</span>
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-[#62706a]">
+                  Planned Arrival
+                </span>
                 <p className="mt-1 text-sm font-semibold text-[#14231d]">
-                  {new Date(tripState.planned_arrival).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  {new Date(tripState.planned_arrival).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
                 </p>
               </div>
               <div>
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-[#62706a]">Status</span>
-                <p className="mt-1 text-sm font-semibold text-[#16756c]">{tripState.status}</p>
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-[#62706a]">
+                  Status
+                </span>
+                <p className="mt-1 text-sm font-semibold text-[#16756c]">
+                  {tripState.status}
+                </p>
               </div>
               <div>
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-[#62706a]">Last Server Sync</span>
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-[#62706a]">
+                  Last Server Sync
+                </span>
                 <p className="mt-1 text-xs text-[#53615a]">
                   {new Date(tripState.last_update_at).toLocaleTimeString()}
                 </p>
               </div>
               <div>
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-[#62706a]">Data Retention</span>
-                <p className="mt-1 text-xs text-[#53615a]">7 days (Policy 2026-01)</p>
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-[#62706a]">
+                  Data Retention
+                </span>
+                <p className="mt-1 text-xs text-[#53615a]">
+                  7 days (Policy 2026-01)
+                </p>
               </div>
             </div>
 
@@ -429,7 +487,8 @@ export function TripsWorkspace() {
               No active journey
             </p>
             <p className="mx-auto mt-1 max-w-md text-xs text-[#62706a]">
-              Start a journey from Route Planning to enable time-aware check-in reminders and optional trusted-contact sharing.
+              Start a journey from Route Planning to enable time-aware check-in
+              reminders and optional trusted-contact sharing.
             </p>
             <Link
               to="/home"
@@ -463,15 +522,23 @@ export function TripsWorkspace() {
 
         {/* Add Contact Modal / Inline Form */}
         {isAddContactOpen && (
-          <form onSubmit={handleAddContact} className="mb-6 border border-[#d8ddd7] bg-[#fffefb] p-5 shadow-sm">
-            <h3 className="text-sm font-bold text-[#14231d]">Add a Trusted Contact</h3>
+          <form
+            onSubmit={handleAddContact}
+            className="mb-6 border border-[#d8ddd7] bg-[#fffefb] p-5 shadow-sm"
+          >
+            <h3 className="text-sm font-bold text-[#14231d]">
+              Add a Trusted Contact
+            </h3>
             <p className="mt-1 text-xs text-[#62706a]">
-              Contact details are used strictly for status sharing. No marketing or external notifications.
+              Contact details are used strictly for status sharing. No marketing
+              or external notifications.
             </p>
 
             <div className="mt-4 grid gap-4 sm:grid-cols-3">
               <div>
-                <label className="block text-xs font-semibold text-[#62706a]">Display Name</label>
+                <label className="block text-xs font-semibold text-[#62706a]">
+                  Display Name
+                </label>
                 <input
                   type="text"
                   required
@@ -482,7 +549,9 @@ export function TripsWorkspace() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-[#62706a]">Email or Reference</label>
+                <label className="block text-xs font-semibold text-[#62706a]">
+                  Email or Reference
+                </label>
                 <input
                   type="text"
                   required
@@ -493,7 +562,9 @@ export function TripsWorkspace() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-[#62706a]">Relationship</label>
+                <label className="block text-xs font-semibold text-[#62706a]">
+                  Relationship
+                </label>
                 <select
                   value={relationship}
                   onChange={(e) => setRelationship(e.target.value)}
@@ -539,12 +610,20 @@ export function TripsWorkspace() {
                 placeholder="Verification token"
                 value={verificationInput.token}
                 onChange={(e) =>
-                  setVerificationInput({ ...verificationInput, token: e.target.value })
+                  setVerificationInput({
+                    ...verificationInput,
+                    token: e.target.value,
+                  })
                 }
                 className="border border-[#aab7af] bg-white p-2 text-xs outline-none"
               />
               <button
-                onClick={() => void handleVerifyContact(verificationInput.id, verificationInput.token)}
+                onClick={() =>
+                  void handleVerifyContact(
+                    verificationInput.id,
+                    verificationInput.token,
+                  )
+                }
                 className="bg-[#16756c] px-4 py-2 font-semibold text-white hover:bg-[#075b53]"
               >
                 Submit token
@@ -563,11 +642,18 @@ export function TripsWorkspace() {
         {contacts.length > 0 ? (
           <div className="divide-y border border-[#d8ddd7] bg-[#fffefb] shadow-sm">
             {contacts.map((contact) => (
-              <div key={contact.contact_id} className="flex flex-wrap items-center justify-between gap-4 p-4 text-xs">
+              <div
+                key={contact.contact_id}
+                className="flex flex-wrap items-center justify-between gap-4 p-4 text-xs"
+              >
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="font-semibold text-[#14231d]">{contact.display_name}</span>
-                    <span className="text-[#62706a]">({contact.relationship_label})</span>
+                    <span className="font-semibold text-[#14231d]">
+                      {contact.display_name}
+                    </span>
+                    <span className="text-[#62706a]">
+                      ({contact.relationship_label})
+                    </span>
                     <span
                       className={`border px-1.5 py-0.5 text-[10px] font-semibold ${
                         contact.verification_status === "VERIFIED"
@@ -578,14 +664,19 @@ export function TripsWorkspace() {
                       {contact.verification_status}
                     </span>
                   </div>
-                  <p className="mt-0.5 text-[#62706a]">{contact.contact_reference}</p>
+                  <p className="mt-0.5 text-[#62706a]">
+                    {contact.contact_reference}
+                  </p>
                 </div>
 
                 <div className="flex items-center gap-2">
                   {contact.verification_status !== "VERIFIED" && (
                     <button
                       onClick={() =>
-                        setVerificationInput({ id: contact.contact_id, token: contact.verification_token || "" })
+                        setVerificationInput({
+                          id: contact.contact_id,
+                          token: contact.verification_token || "",
+                        })
                       }
                       className="flex items-center gap-1 border border-[#16756c] px-2.5 py-1.5 text-xs font-semibold text-[#075b53] hover:bg-[#dcefe9]"
                     >
@@ -596,7 +687,9 @@ export function TripsWorkspace() {
 
                   {activeTripId && (
                     <button
-                      onClick={() => void handleShareWithContact(contact.contact_id)}
+                      onClick={() =>
+                        void handleShareWithContact(contact.contact_id)
+                      }
                       className="flex items-center gap-1 bg-[#16756c] px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-[#075b53]"
                     >
                       <Share2 className="h-3.5 w-3.5" />
@@ -617,7 +710,8 @@ export function TripsWorkspace() {
           </div>
         ) : (
           <div className="border border-[#d8ddd7] bg-[#fffefb] p-6 text-center text-xs text-[#62706a]">
-            No trusted contacts configured. Add a contact to enable status sharing.
+            No trusted contacts configured. Add a contact to enable status
+            sharing.
           </div>
         )}
       </section>
@@ -630,13 +724,17 @@ export function TripsWorkspace() {
           </h2>
           <div className="divide-y border border-[#d8ddd7] bg-[#fffefb] shadow-sm">
             {grants.map((grant) => (
-              <div key={grant.grant_id} className="flex items-center justify-between p-4 text-xs">
+              <div
+                key={grant.grant_id}
+                className="flex items-center justify-between p-4 text-xs"
+              >
                 <div>
                   <span className="font-semibold text-[#14231d]">
                     Scope: {grant.scope} · Status: {grant.status}
                   </span>
                   <p className="mt-0.5 text-[#62706a]">
-                    Issued: {new Date(grant.issued_at).toLocaleTimeString()} · Expires: {new Date(grant.expires_at).toLocaleTimeString()}
+                    Issued: {new Date(grant.issued_at).toLocaleTimeString()} ·
+                    Expires: {new Date(grant.expires_at).toLocaleTimeString()}
                   </p>
                 </div>
                 <button
@@ -655,7 +753,9 @@ export function TripsWorkspace() {
       <div className="flex items-start gap-2 border border-[#d8ddd7] bg-[#fffefb] p-4 text-xs text-[#53615a]">
         <Clock className="mt-0.5 h-4 w-4 shrink-0 text-[#16756c]" />
         <p>
-          Trip state is retained for 7 days in accordance with the data retention policy. Check-in prompts occur periodically before your planned arrival time.
+          Trip state is retained for 7 days in accordance with the data
+          retention policy. Check-in prompts occur periodically before your
+          planned arrival time.
         </p>
       </div>
     </div>

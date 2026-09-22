@@ -9,4 +9,3 @@ export * as tripsApi from "./trips";
 export * as trustedContactsApi from "./trustedContacts";
 export * as emergencyApi from "./emergency";
 export * as privacyApi from "./privacy";
-

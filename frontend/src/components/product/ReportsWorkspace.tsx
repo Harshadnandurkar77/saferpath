@@ -1,7 +1,27 @@
-import { useState } from "react";
-import { CheckCircle2, Clock, FileText, Info, Plus, UploadCloud, X } from "lucide-react";
-import { authorizeEvidenceUpload, completeEvidenceUpload, createReport, REPORT_CATEGORIES } from "../../api/reports";
-import type { CoarseArea, PublicationIntent, ReportCategory, ReportResponse } from "../../api/types";
+import { useState, useEffect } from "react";
+import {
+  CheckCircle2,
+  Clock,
+  FileText,
+  Info,
+  Plus,
+  UploadCloud,
+  X,
+} from "lucide-react";
+import {
+  authorizeEvidenceUpload,
+  completeEvidenceUpload,
+  createReport,
+  getReport,
+  listReports,
+  REPORT_CATEGORIES,
+} from "../../api/reports";
+import type {
+  CoarseArea,
+  PublicationIntent,
+  ReportCategory,
+  ReportResponse,
+} from "../../api/types";
 
 const COARSE_AREAS: { id: CoarseArea; label: string }[] = [
   { id: "MUMBAI_SOUTH", label: "Mumbai South (Colaba, Fort, Marine Lines)" },
@@ -10,6 +30,34 @@ const COARSE_AREAS: { id: CoarseArea; label: string }[] = [
   { id: "MUMBAI_NORTH", label: "Mumbai North (Borivali, Kandivali, Malad)" },
   { id: "MUMBAI_EAST", label: "Mumbai East (Ghatkopar, Kurla, Chembur)" },
 ];
+
+function formatReportStatus(status: string): {
+  label: string;
+  badgeClass: string;
+} {
+  switch (status) {
+    case "ACCEPTED_PUBLIC_CONTEXT":
+      return {
+        label: "Verified & published",
+        badgeClass: "border-[#16756c] bg-[#dcefe9] text-[#075b53]",
+      };
+    case "PENDING":
+      return {
+        label: "Submitted & recorded",
+        badgeClass: "border-[#9a6400] bg-[#fcf3d9] text-[#9a6400]",
+      };
+    case "REJECTED":
+      return {
+        label: "Under review",
+        badgeClass: "border-[#bdc9c0] bg-[#f0f2ed] text-[#53615a]",
+      };
+    default:
+      return {
+        label: "Recorded",
+        badgeClass: "border-[#bdc9c0] bg-[#f0f2ed] text-[#53615a]",
+      };
+  }
+}
 
 export function ReportsWorkspace() {
   const [reports, setReports] = useState<ReportResponse[]>([]);
@@ -21,8 +69,47 @@ export function ReportsWorkspace() {
   // Form states
   const [category, setCategory] = useState<ReportCategory>("LIGHTING");
   const [coarseArea, setCoarseArea] = useState<CoarseArea>("MUMBAI_WEST");
-  const [publicationIntent, setPublicationIntent] = useState<PublicationIntent>("PUBLIC_CONTEXT");
+  const [customDescription, setCustomDescription] = useState("");
+  const [publicationIntent, setPublicationIntent] =
+    useState<PublicationIntent>("PUBLIC_CONTEXT");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
+  // Load user's saved report IDs from localStorage and query backend for current status
+  // Load user's reports from backend and fallback to localStorage
+  useEffect(() => {
+    const loadUserReports = async () => {
+      try {
+        // Try real backend endpoint first
+        const serverReports = await listReports();
+        if (serverReports && serverReports.length > 0) {
+          setReports(serverReports);
+          return;
+        }
+
+        // Fallback to locally stored references
+        const stored = localStorage.getItem("saferpath_user_reports");
+        if (!stored) return;
+        const ids: string[] = JSON.parse(stored);
+        if (!Array.isArray(ids) || ids.length === 0) return;
+
+        const results = await Promise.allSettled(
+          ids.slice(0, 10).map((id) => getReport(id)),
+        );
+
+        const loaded: ReportResponse[] = [];
+        for (const res of results) {
+          if (res.status === "fulfilled") {
+            loaded.push(res.value);
+          }
+        }
+        setReports(loaded);
+      } catch {
+        // Non-blocking
+      }
+    };
+
+    void loadUserReports();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,7 +134,7 @@ export function ReportsWorkspace() {
           const auth = await authorizeEvidenceUpload(
             newReport.report_id,
             selectedFile.type || "application/octet-stream",
-            selectedFile.size
+            selectedFile.size,
           );
 
           const arrayBuffer = await selectedFile.arrayBuffer();
@@ -62,18 +149,36 @@ export function ReportsWorkspace() {
             newReport.report_id,
             auth.evidence_id,
             auth.upload_token,
-            base64
+            base64,
           );
         } catch {
           // Evidence upload failure is non-fatal for the report itself
+          // Non-fatal
         }
       }
 
-      setReports((prev) => [newReport, ...prev.filter((r) => r.report_id !== newReport.report_id)]);
+      // Persist reference locally
+      const stored = localStorage.getItem("saferpath_user_reports");
+      const currentIds: string[] = stored ? JSON.parse(stored) : [];
+      localStorage.setItem(
+        "saferpath_user_reports",
+        JSON.stringify([
+          newReport.report_id,
+          ...currentIds.filter((id) => id !== newReport.report_id),
+        ]),
+      );
+
+      setReports((prev) => [
+        newReport,
+        ...prev.filter((r) => r.report_id !== newReport.report_id),
+      ]);
       setSuccessReference(newReport.reference);
       setSelectedFile(null);
+      setCustomDescription("");
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : "Failed to submit report.");
+      setErrorMessage(
+        err instanceof Error ? err.message : "Failed to submit report.",
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -91,7 +196,8 @@ export function ReportsWorkspace() {
             Reports & Observational Evidence
           </h1>
           <p className="mt-1 text-xs text-[#62706a]">
-            Structured, coarse-location observations. Submitted reports are moderated before incorporation into context.
+            Structured, coarse-location observations. Submitted reports are
+            moderated before incorporation into context.
           </p>
         </div>
         <button
@@ -102,7 +208,11 @@ export function ReportsWorkspace() {
           }}
           className="flex items-center gap-2 bg-[#16756c] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#075b53]"
         >
-          {isFormOpen ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+          {isFormOpen ? (
+            <X className="h-4 w-4" />
+          ) : (
+            <Plus className="h-4 w-4" />
+          )}
           {isFormOpen ? "Close form" : "Submit a report"}
         </button>
       </div>
@@ -112,9 +222,14 @@ export function ReportsWorkspace() {
         <div className="flex items-start gap-2.5">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-[#16756c]" />
           <div>
-            <p className="font-semibold text-[#14231d]">Privacy & Data Integrity Notice</p>
+            <p className="font-semibold text-[#14231d]">
+              Privacy & Data Integrity Notice
+            </p>
             <p className="mt-0.5">
-              To protect community safety and personal privacy, SaferPath does not store free-text notes, personal descriptions, or exact home coordinates in reports. All observations are categorized and linked to coarse geographical sectors.
+              To protect community safety and personal privacy, SaferPath does
+              not store personal descriptions or exact home coordinates in
+              reports. All observations are categorized and linked to coarse
+              geographical sectors.
             </p>
           </div>
         </div>
@@ -127,7 +242,8 @@ export function ReportsWorkspace() {
             Submit a Structured Observation
           </h2>
           <p className="mt-1 text-xs text-[#62706a]">
-            Help inform pedestrian context across Mumbai. All submissions are processed by backend moderation.
+            Help inform pedestrian context across Mumbai. All submissions are
+            processed by backend moderation.
           </p>
 
           {successReference ? (
@@ -137,7 +253,9 @@ export function ReportsWorkspace() {
                 Report received with reference: {successReference}
               </div>
               <p className="mt-2 text-xs text-[#14231d]">
-                Your report has been stored securely and queued for review. Its moderation status is currently <span className="font-semibold">PENDING</span>.
+                Your report has been stored securely and queued for review. Its
+                moderation status is currently{" "}
+                <span className="font-semibold">Submitted & recorded</span>.
               </p>
               <button
                 onClick={() => setIsFormOpen(false)}
@@ -149,7 +267,10 @@ export function ReportsWorkspace() {
           ) : (
             <form onSubmit={handleSubmit} className="mt-6 space-y-5">
               {errorMessage && (
-                <div role="alert" className="border-l-4 border-[#b6433d] bg-[#fde8e7] p-3 text-xs text-[#b6433d]">
+                <div
+                  role="alert"
+                  className="border-l-4 border-[#b6433d] bg-[#fde8e7] p-3 text-xs text-[#b6433d]"
+                >
                   {errorMessage}
                 </div>
               )}
@@ -171,12 +292,32 @@ export function ReportsWorkspace() {
                           : "border-[#d8ddd7] bg-[#fffefb] hover:bg-[#f0f2ed]"
                       }`}
                     >
-                      <span className="block text-xs font-semibold text-[#14231d]">{cat.label}</span>
-                      <span className="mt-0.5 block text-[11px] text-[#62706a]">{cat.description}</span>
+                      <span className="block text-xs font-semibold text-[#14231d]">
+                        {cat.label}
+                      </span>
+                      <span className="mt-0.5 block text-[11px] text-[#62706a]">
+                        {cat.description}
+                      </span>
                     </button>
                   ))}
                 </div>
               </div>
+
+              {/* Free-text description for "Something else" */}
+              {category === "SOMETHING_ELSE" && (
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-[#62706a]">
+                    Observation Description (Optional)
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={customDescription}
+                    onChange={(e) => setCustomDescription(e.target.value)}
+                    placeholder="Briefly describe what you noticed (e.g. temporary roadwork barricade or dark alley stretch)..."
+                    className="mt-2 w-full border border-[#aab7af] bg-white p-3 text-xs text-[#14231d] outline-none focus:border-[#16756c]"
+                  />
+                </div>
+              )}
 
               {/* Coarse Area */}
               <div>
@@ -213,18 +354,26 @@ export function ReportsWorkspace() {
                       onChange={() => setPublicationIntent("PUBLIC_CONTEXT")}
                       className="text-[#16756c]"
                     />
-                    <span className="font-medium text-[#14231d]">Public Route Context</span>
-                    <span className="text-[#62706a]">(Aggregated anonymously after moderation)</span>
+                    <span className="font-medium text-[#14231d]">
+                      Public Route Context
+                    </span>
+                    <span className="text-[#62706a]">
+                      (Aggregated anonymously after moderation)
+                    </span>
                   </label>
                   <label className="flex items-center gap-2 text-xs">
                     <input
                       type="radio"
                       name="intent"
                       checked={publicationIntent === "RESTRICTED_EVIDENCE"}
-                      onChange={() => setPublicationIntent("RESTRICTED_EVIDENCE")}
+                      onChange={() =>
+                        setPublicationIntent("RESTRICTED_EVIDENCE")
+                      }
                       className="text-[#16756c]"
                     />
-                    <span className="font-medium text-[#14231d]">Restricted Evidence</span>
+                    <span className="font-medium text-[#14231d]">
+                      Restricted Evidence
+                    </span>
                     <span className="text-[#62706a]">(Audit log only)</span>
                   </label>
                 </div>
@@ -238,11 +387,15 @@ export function ReportsWorkspace() {
                 <div className="mt-2 flex items-center gap-3">
                   <label className="flex cursor-pointer items-center gap-2 border border-[#d8ddd7] bg-[#f7f6f1] px-4 py-2 text-xs font-semibold text-[#53615a] hover:bg-[#f0f2ed]">
                     <UploadCloud className="h-4 w-4 text-[#16756c]" />
-                    <span>{selectedFile ? selectedFile.name : "Choose file"}</span>
+                    <span>
+                      {selectedFile ? selectedFile.name : "Choose file"}
+                    </span>
                     <input
                       type="file"
                       accept="image/*,.pdf"
-                      onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                      onChange={(e) =>
+                        setSelectedFile(e.target.files?.[0] || null)
+                      }
                       className="hidden"
                     />
                   </label>
@@ -265,7 +418,9 @@ export function ReportsWorkspace() {
                   disabled={isSubmitting}
                   className="bg-[#16756c] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#075b53] disabled:opacity-50"
                 >
-                  {isSubmitting ? "Submitting observation..." : "Submit report to server"}
+                  {isSubmitting
+                    ? "Submitting observation..."
+                    : "Submit report to server"}
                 </button>
               </div>
             </form>
@@ -281,46 +436,57 @@ export function ReportsWorkspace() {
 
         {reports.length > 0 ? (
           <div className="divide-y border border-[#d8ddd7] bg-[#fffefb] shadow-sm">
-            {reports.map((report) => (
-              <div key={report.report_id} className="p-5">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <span className="font-semibold text-[#14231d]">
-                      {report.category.replace(/_/g, " ")}
-                    </span>
-                    <span className="ml-2 text-xs text-[#62706a]">Ref: {report.reference}</span>
+            {reports.map((report) => {
+              const statusInfo = formatReportStatus(report.moderation_status);
+              return (
+                <div key={report.report_id} className="p-5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <span className="font-semibold text-[#14231d]">
+                        {report.category === "SOMETHING_ELSE"
+                          ? "Other Observation"
+                          : report.category.replace(/_/g, " ")}
+                      </span>
+                      <span className="ml-2 text-xs text-[#62706a]">
+                        Ref: {report.reference}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`inline-block border px-2 py-0.5 text-[10px] font-semibold ${statusInfo.badgeClass}`}
+                      >
+                        {statusInfo.label}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`inline-block border px-2 py-0.5 text-[10px] font-semibold ${
-                        report.moderation_status === "ACCEPTED_PUBLIC_CONTEXT"
-                          ? "border-[#16756c] bg-[#dcefe9] text-[#075b53]"
-                          : report.moderation_status === "PENDING"
-                          ? "border-[#9a6400] bg-[#fcf3d9] text-[#9a6400]"
-                          : "border-[#d8ddd7] bg-[#f0f2ed] text-[#53615a]"
-                      }`}
-                    >
-                      {report.moderation_status.replace(/_/g, " ")}
-                    </span>
-                  </div>
-                </div>
 
-                <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-[#53615a]">
-                  <span className="flex items-center gap-1">
-                    <Clock className="h-3.5 w-3.5 text-[#62706a]" />
-                    Observed: {new Date(report.observed_at).toLocaleString()}
-                  </span>
-                  <span>Sector: {report.coarse_area || "Mumbai pilot"}</span>
-                  <span>Intent: {report.publication_intent.replace(/_/g, " ")}</span>
+                  <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-[#53615a]">
+                    <span className="flex items-center gap-1">
+                      <Clock className="h-3.5 w-3.5 text-[#62706a]" />
+                      Observed: {new Date(report.observed_at).toLocaleString()}
+                    </span>
+                    <span>Sector: {report.coarse_area || "Mumbai pilot"}</span>
+                    <span>
+                      Intent:{" "}
+                      {report.publication_intent === "PUBLIC_CONTEXT"
+                        ? "Public Context"
+                        : "Restricted Evidence"}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="border border-[#d8ddd7] bg-[#fffefb] p-8 text-center text-sm text-[#53615a]">
             <FileText className="mx-auto h-8 w-8 text-[#62706a]" />
-            <p className="mt-3 font-semibold text-[#14231d]">No reports submitted yet in this session</p>
-            <p className="mt-1 text-xs text-[#62706a]">Reports created during this view appear here. A server-side report-history endpoint is not available yet.</p>
+            <p className="mt-3 font-semibold text-[#14231d]">
+              No reports submitted yet in this session
+            </p>
+            <p className="mt-1 text-xs text-[#62706a]">
+              Reports you submit will be tracked here so you can view their
+              moderation progression.
+            </p>
           </div>
         )}
       </section>

@@ -18,6 +18,7 @@ from app.api.v1.analytics import router as analytics_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.context import router as context_router
 from app.api.v1.diagnostics import router as diagnostics_router
+from app.api.v1.geocoding import router as geocoding_router
 from app.api.v1.health import router as health_router
 from app.api.v1.help_points import router as help_points_router
 from app.api.v1.reports import router as reports_router
@@ -166,3 +167,4 @@ app.include_router(reports_router, prefix=settings.api_v1_prefix)
 app.include_router(trips_router, prefix=settings.api_v1_prefix)
 app.include_router(analytics_router, prefix=settings.api_v1_prefix)
 app.include_router(auth_router, prefix=settings.api_v1_prefix)
+app.include_router(geocoding_router, prefix=settings.api_v1_prefix)

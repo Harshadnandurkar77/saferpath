@@ -8,7 +8,9 @@ import type {
 } from "./types";
 
 export async function createTrustedContact(
-  params: Omit<TrustedContactCreateRequest, "session_id"> & { session_id?: string }
+  params: Omit<TrustedContactCreateRequest, "session_id"> & {
+    session_id?: string;
+  },
 ): Promise<TrustedContactResponse> {
   const sid = params.session_id || getEphemeralSessionId();
   const payload: TrustedContactCreateRequest = {
@@ -16,14 +18,18 @@ export async function createTrustedContact(
     session_id: sid,
   };
 
-  return api<TrustedContactResponse>("/trusted-contacts", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  }, false);
+  return api<TrustedContactResponse>(
+    "/trusted-contacts",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    false,
+  );
 }
 
 export async function listTrustedContacts(
-  sessionId?: string
+  sessionId?: string,
 ): Promise<TrustedContactResponse[]> {
   const sid = sessionId || getEphemeralSessionId();
   return api<TrustedContactResponse[]>(
@@ -31,14 +37,14 @@ export async function listTrustedContacts(
     {
       method: "GET",
     },
-    false
+    false,
   );
 }
 
 export async function verifyTrustedContact(
   contactId: string,
   verificationToken: string,
-  sessionId?: string
+  sessionId?: string,
 ): Promise<TrustedContactResponse> {
   const sid = sessionId || getEphemeralSessionId();
   const payload: TrustedContactVerifyRequest = {
@@ -52,13 +58,13 @@ export async function verifyTrustedContact(
       method: "POST",
       body: JSON.stringify(payload),
     },
-    false
+    false,
   );
 }
 
 export async function revokeTrustedContact(
   contactId: string,
-  sessionId?: string
+  sessionId?: string,
 ): Promise<TrustedContactResponse> {
   const sid = sessionId || getEphemeralSessionId();
   return api<TrustedContactResponse>(
@@ -66,12 +72,14 @@ export async function revokeTrustedContact(
     {
       method: "POST",
     },
-    false
+    false,
   );
 }
 
 export async function createSharingGrant(
-  params: Omit<SharingGrantCreateRequest, "session_id"> & { session_id?: string }
+  params: Omit<SharingGrantCreateRequest, "session_id"> & {
+    session_id?: string;
+  },
 ): Promise<SharingGrantResponse> {
   const sid = params.session_id || getEphemeralSessionId();
   const payload: SharingGrantCreateRequest = {
@@ -79,15 +87,19 @@ export async function createSharingGrant(
     session_id: sid,
   };
 
-  return api<SharingGrantResponse>("/sharing-grants", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  }, false);
+  return api<SharingGrantResponse>(
+    "/sharing-grants",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    false,
+  );
 }
 
 export async function revokeSharingGrant(
   grantId: string,
-  sessionId?: string
+  sessionId?: string,
 ): Promise<SharingGrantResponse> {
   const sid = sessionId || getEphemeralSessionId();
   return api<SharingGrantResponse>(
@@ -95,7 +107,6 @@ export async function revokeSharingGrant(
     {
       method: "POST",
     },
-    false
+    false,
   );
 }
-

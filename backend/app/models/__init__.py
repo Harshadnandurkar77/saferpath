@@ -7,8 +7,16 @@ from app.models.analytics import (
 )
 from app.models.context import ContextVersion, SafetySignal
 from app.models.help_points import HelpPoint, HelpPointVerification
-from app.models.identity import (AuthenticationCode, ConsentRecord, NotificationPreference, Tenant,
-                                 TenantMembership, User, UserProfile, UserSession)
+from app.models.identity import (
+    AuthenticationCode,
+    ConsentRecord,
+    NotificationPreference,
+    Tenant,
+    TenantMembership,
+    User,
+    UserProfile,
+    UserSession,
+)
 from app.models.job_run import JobRun
 from app.models.reports import (
     EvidenceAuditEvent,

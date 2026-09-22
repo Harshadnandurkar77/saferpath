@@ -98,3 +98,28 @@ def test_report_idempotency_is_race_safe_and_creates_one_durable_report():
                 text("DELETE FROM incident_reports WHERE idempotency_key = :key"), {"key": key}
             )
             session.commit()
+
+
+def test_report_list_by_session_and_something_else_category(client):
+    sid = f"user-reports-{uuid.uuid4()}"
+    p1 = _payload() | {"session_id": sid, "idempotency_key": f"r1-{uuid.uuid4()}", "category": "SOMETHING_ELSE"}
+    p2 = _payload() | {"session_id": sid, "idempotency_key": f"r2-{uuid.uuid4()}", "category": "LIGHTING"}
+
+    res1 = client.post("/v1/reports", json=p1)
+    assert res1.status_code == 201
+    assert res1.json()["category"] == "SOMETHING_ELSE"
+
+    res2 = client.post("/v1/reports", json=p2)
+    assert res2.status_code == 201
+
+    list_res = client.get(f"/v1/reports?session_id={sid}")
+    assert list_res.status_code == 200
+    reports = list_res.json()
+    assert len(reports) == 2
+    assert {r["category"] for r in reports} == {"SOMETHING_ELSE", "LIGHTING"}
+
+    # Cleanup
+    with SessionLocal() as session:
+        session.execute(text("DELETE FROM incident_reports WHERE reporter_session_id = :sid"), {"sid": sid})
+        session.commit()
+

@@ -220,6 +220,16 @@ class ReportService:
             raise ReportFailure("unauthorized")
         return self._response(report, False)
 
+    def list_by_session(self, db: Session, session_id: str) -> list[ReportResponse]:
+        if not session_id:
+            return []
+        reports = db.scalars(
+            select(IncidentReport)
+            .where(IncidentReport.reporter_session_id == session_id)
+            .order_by(IncidentReport.submitted_at.desc())
+        ).all()
+        return [self._response(r, False) for r in reports]
+
     @staticmethod
     def _segment_id(db: Session, value: str | None) -> uuid.UUID | None:
         if value is None:

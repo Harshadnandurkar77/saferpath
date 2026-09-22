@@ -75,7 +75,7 @@ export default function Hero() {
             <h1 className="text-[clamp(2.6rem,4.8vw,4.85rem)] font-bold leading-[1.03] tracking-[-0.048em] text-[#07111F]">
               The fastest route is not always the{" "}
               <span className="relative inline-block text-slate-950">
-                safest route.
+                best-supported route.
                 <span
                   className="absolute -bottom-1 left-0 right-0 h-[3.5px] rounded-full bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 opacity-90"
                   aria-hidden="true"

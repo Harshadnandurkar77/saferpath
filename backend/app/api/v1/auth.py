@@ -5,12 +5,23 @@ from sqlalchemy.orm import Session
 from app.core.authz import current_user
 from app.core.config import get_settings
 from app.db.session import get_transactional_db
+from app.models.identity import ConsentRecord, User
+from app.modules.identity.schemas import (
+    AccountResponse,
+    CodeRequest,
+    ConsentCreate,
+    ConsentResponse,
+    OnboardingStatus,
+    ProfileResponse,
+    ProfileUpdate,
+    SessionResponse,
+    VerifyRequest,
+)
 from app.modules.identity.service import (
     AuthenticationFailure,
-    AuthenticationService, FixtureAuthenticationCodeProvider,
+    AuthenticationService,
+    FixtureAuthenticationCodeProvider,
 )
-from app.models.identity import ConsentRecord, User
-from app.modules.identity.schemas import AccountResponse, CodeRequest, ConsentCreate, ConsentResponse, OnboardingStatus, ProfileResponse, ProfileUpdate, SessionResponse, VerifyRequest
 
 router = APIRouter(tags=["authentication"])
 provider = FixtureAuthenticationCodeProvider()
@@ -88,9 +99,12 @@ def list_consents(user: User = Depends(current_user), db: Session = Depends(get_
 def withdraw_consent(consent_id: str, user: User = Depends(current_user), db: Session = Depends(get_transactional_db)) -> ConsentResponse:
     import uuid
     from datetime import UTC, datetime
-    try: item = db.scalar(select(ConsentRecord).where(ConsentRecord.id == uuid.UUID(consent_id), ConsentRecord.user_id == user.id))
-    except ValueError: item = None
-    if not item: raise HTTPException(status_code=404, detail="Consent record was not found.")
+    try:
+        item = db.scalar(select(ConsentRecord).where(ConsentRecord.id == uuid.UUID(consent_id), ConsentRecord.user_id == user.id))
+    except ValueError:
+        item = None
+    if not item:
+        raise HTTPException(status_code=404, detail="Consent record was not found.")
     if item.withdrawn_at is None:
         item.granted, item.withdrawn_at = False, datetime.now(UTC)
     return consent_response(item)

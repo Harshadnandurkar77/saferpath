@@ -5,7 +5,7 @@ export async function compareRoutes(
   params: Omit<RouteComparisonRequest, "idempotency_key" | "session_id"> & {
     idempotency_key?: string;
     session_id?: string;
-  }
+  },
 ): Promise<RouteComparisonResponse> {
   const payload: RouteComparisonRequest = {
     ...params,
@@ -19,7 +19,6 @@ export async function compareRoutes(
       method: "POST",
       body: JSON.stringify(payload),
     },
-    false // Works unauthenticated or authenticated
+    false, // Works unauthenticated or authenticated
   );
 }
-

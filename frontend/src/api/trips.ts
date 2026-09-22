@@ -1,4 +1,4 @@
-import { api, apiBaseUrl, generateIdempotencyKey, getEphemeralSessionId } from "./client";
+import { api, generateIdempotencyKey, getEphemeralSessionId } from "./client";
 import type {
   DeviationResponseRequest,
   DeviationResponseResult,
@@ -9,37 +9,40 @@ import type {
 } from "./types";
 
 export async function createTrip(
-  params: Omit<TripCreateRequest, "session_id"> & { session_id?: string }
+  params: Omit<TripCreateRequest, "session_id"> & { session_id?: string },
 ): Promise<TripResponse> {
   const payload: TripCreateRequest = {
     ...params,
     session_id: params.session_id || getEphemeralSessionId(),
   };
 
-  return api<TripResponse>("/trips", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  }, false);
+  return api<TripResponse>(
+    "/trips",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    false,
+  );
 }
 
-export async function getTrip(tripId: string, sessionId?: string): Promise<TripPollResponse> {
+export async function getTrip(
+  tripId: string,
+  sessionId?: string,
+): Promise<TripPollResponse> {
   const sid = sessionId || getEphemeralSessionId();
   return api<TripPollResponse>(
     `/trips/${encodeURIComponent(tripId)}?session_id=${encodeURIComponent(sid)}`,
     {
       method: "GET",
     },
-    false
+    false,
   );
-}
-
-export function tripStreamUrl(tripId: string, sessionId = getEphemeralSessionId()): string {
-  return `${apiBaseUrl}/trips/${encodeURIComponent(tripId)}/stream?session_id=${encodeURIComponent(sessionId)}`;
 }
 
 export async function checkInTrip(
   tripId: string,
-  sessionId?: string
+  sessionId?: string,
 ): Promise<TripResponse> {
   const sid = sessionId || getEphemeralSessionId();
   const payload: TripActionRequest = {
@@ -49,15 +52,19 @@ export async function checkInTrip(
     occurred_at: new Date().toISOString(),
   };
 
-  return api<TripResponse>(`/trips/${encodeURIComponent(tripId)}/check-in`, {
-    method: "POST",
-    body: JSON.stringify(payload),
-  }, false);
+  return api<TripResponse>(
+    `/trips/${encodeURIComponent(tripId)}/check-in`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    false,
+  );
 }
 
 export async function stopTrip(
   tripId: string,
-  sessionId?: string
+  sessionId?: string,
 ): Promise<TripResponse> {
   const sid = sessionId || getEphemeralSessionId();
   const payload: TripActionRequest = {
@@ -67,16 +74,20 @@ export async function stopTrip(
     occurred_at: new Date().toISOString(),
   };
 
-  return api<TripResponse>(`/trips/${encodeURIComponent(tripId)}/stop`, {
-    method: "POST",
-    body: JSON.stringify(payload),
-  }, false);
+  return api<TripResponse>(
+    `/trips/${encodeURIComponent(tripId)}/stop`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    false,
+  );
 }
 
 export async function respondToDeviation(
   tripId: string,
   response: "CONFIRM_ROUTE_CHANGE" | "REJECT_ROUTE_CHANGE" | "UNSURE",
-  sessionId?: string
+  sessionId?: string,
 ): Promise<DeviationResponseResult> {
   const sid = sessionId || getEphemeralSessionId();
   const payload: DeviationResponseRequest = {
@@ -92,7 +103,6 @@ export async function respondToDeviation(
       method: "POST",
       body: JSON.stringify(payload),
     },
-    false
+    false,
   );
 }
-

@@ -1,6 +1,34 @@
 @import "tailwindcss";
 
-:root { --ink:#14231d; --paper:#f7f6f1; --surface:#fffefb; --line:#d8ddd7; --teal:#16756c; --teal-soft:#dcefe9; --amber:#9a6400; --amber-soft:#fff0ce; --coral:#b6433d; --muted:#62706a; }
+:root {
+  --ink: #14231d;
+  --paper: #f7f6f1;
+  --surface: #fffefb;
+  --line: #d8ddd7;
+  --teal: #16756c;
+  --teal-soft: #dcefe9;
+  --amber: #9a6400;
+  --amber-soft: #fff0ce;
+  --coral: #b6433d;
+  --muted: #62706a;
+  --card: #fbfbf9;
+  --hover: #f0f2ed;
+}
+
+.dark {
+  --ink: #e8ede9;
+  --paper: #0f1612;
+  --surface: #1a2520;
+  --line: #2e3b35;
+  --teal: #3ec9ba;
+  --teal-soft: #162e2a;
+  --amber: #e8b64a;
+  --amber-soft: #2a2210;
+  --coral: #f07068;
+  --muted: #8b9c94;
+  --card: #152019;
+  --hover: #1e2e28;
+}
 
 html {
   scroll-behavior: smooth;
@@ -9,9 +37,35 @@ html {
 body {
   margin: 0;
   min-width: 320px;
-  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif; background:var(--paper); color:var(--ink);
+  font-family:
+    Inter,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
 }
-* { box-sizing:border-box; }
-:focus-visible { outline:3px solid #16756c; outline-offset:3px; }
-@media (prefers-reduced-motion: reduce) { *,*::before,*::after { animation-duration:.01ms!important; transition-duration:.01ms!important; scroll-behavior:auto!important; } }
+
+* {
+  box-sizing: border-box;
+}
+
+:focus-visible {
+  outline: 3px solid var(--teal);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

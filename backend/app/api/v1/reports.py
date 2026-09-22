@@ -55,6 +55,14 @@ def create_report(
     )
 
 
+@router.get("/reports", response_model=list[ReportResponse])
+def list_reports(
+    session_id: str,
+    db: Session = Depends(get_transactional_db),
+) -> list[ReportResponse]:
+    return service.list_by_session(db, session_id)
+
+
 @router.get("/reports/{report_id}", response_model=ReportResponse)
 def get_report(
     report_id: str,

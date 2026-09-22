@@ -8,21 +8,27 @@ import type {
   ProfileUpdatePayload,
 } from "./types";
 
-export async function requestCode(email: string): Promise<{ accepted: boolean }> {
+export async function requestCode(
+  email: string,
+): Promise<{ accepted: boolean }> {
   return api<{ accepted: boolean }>(
     "/auth/codes",
     {
       method: "POST",
       body: JSON.stringify({ email }),
     },
-    false
+    false,
   );
 }
 
 export async function verifyCode(
   email: string,
-  code: string
-): Promise<{ session_token: string; account: Account; onboarding_required: boolean }> {
+  code: string,
+): Promise<{
+  session_token: string;
+  account: Account;
+  onboarding_required: boolean;
+}> {
   const result = await api<{
     session_token: string;
     account: Account;
@@ -33,7 +39,7 @@ export async function verifyCode(
       method: "POST",
       body: JSON.stringify({ email, code }),
     },
-    false
+    false,
   );
   session.set(result.session_token);
   return result;
@@ -55,7 +61,9 @@ export async function profile(): Promise<Profile> {
   return api<Profile>("/profile");
 }
 
-export async function updateProfile(value: ProfileUpdatePayload): Promise<Profile> {
+export async function updateProfile(
+  value: ProfileUpdatePayload,
+): Promise<Profile> {
   return api<Profile>("/profile", {
     method: "PATCH",
     body: JSON.stringify(value),
@@ -68,7 +76,7 @@ export async function consents(): Promise<Consent[]> {
 
 export async function createConsent(
   purpose: ConsentPurpose | string,
-  granted = true
+  granted = true,
 ): Promise<Consent> {
   return api<Consent>("/consents", {
     method: "POST",

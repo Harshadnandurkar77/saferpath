@@ -23,7 +23,13 @@ export interface ProfileUpdatePayload {
   language?: string | null;
   accessibility_preferences?: Record<string, unknown> | null;
   profile_data?: Record<string, unknown> | null;
-  clear_fields?: ("display_name" | "traveller_type" | "language" | "accessibility_preferences" | "profile_data")[];
+  clear_fields?: (
+    | "display_name"
+    | "traveller_type"
+    | "language"
+    | "accessibility_preferences"
+    | "profile_data"
+  )[];
 }
 
 export interface OnboardingStatus {
@@ -176,7 +182,26 @@ export type ReportCategory =
   | "ACCESSIBILITY"
   | "PEDESTRIAN_INFRASTRUCTURE"
   | "ACTIVITY_CONTEXT"
-  | "TRANSIT_CONTEXT";
+  | "TRANSIT_CONTEXT"
+  | "SOMETHING_ELSE";
+
+export interface RoutinePreference {
+  id: string;
+  title: string;
+  time: string;
+  origin: string;
+  destination: string;
+  days: string[];
+}
+
+export interface SavedPlace {
+  id: string;
+  name: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  category?: "home" | "work" | "college" | "transit" | "other";
+}
 
 export type PublicationIntent = "PUBLIC_CONTEXT" | "RESTRICTED_EVIDENCE";
 
@@ -247,7 +272,13 @@ export interface HelpPointResponse {
   category: string;
   contact: string | null;
   accessibility: string | null;
-  verification_status: "VERIFIED" | "UNVERIFIED" | "STALE" | "EXPIRED" | "SUSPENDED" | string;
+  verification_status:
+    | "VERIFIED"
+    | "UNVERIFIED"
+    | "STALE"
+    | "EXPIRED"
+    | "SUSPENDED"
+    | string;
   operating_status: "OPEN" | "CLOSED" | "UNKNOWN" | string;
   sponsor_disclosure: string | null;
 }

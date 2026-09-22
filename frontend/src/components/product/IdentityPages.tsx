@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import { ProductShell } from "./ProductSurface";
-import { consents, createConsent, profile, updateProfile, withdrawConsent } from "../../api/identity";
+import {
+  consents,
+  createConsent,
+  profile,
+  updateProfile,
+  withdrawConsent,
+} from "../../api/identity";
 import type { Consent, ConsentPurpose, TravellerType } from "../../api/types";
 import { useAuth } from "../../context/AuthContext";
 import { CheckCircle2, Globe, LogOut, Shield, User } from "lucide-react";
@@ -41,7 +47,9 @@ export function ProfilePage() {
         setIsLoading(false);
       })
       .catch(() => {
-        setErrorMessage("We could not load your profile from the server. Please try again.");
+        setErrorMessage(
+          "We could not load your profile from the server. Please try again.",
+        );
         setIsLoading(false);
       });
   }, []);
@@ -65,7 +73,9 @@ export function ProfilePage() {
       await refresh();
       setStatusMessage("Profile updated successfully on the server.");
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : "Failed to save profile.");
+      setErrorMessage(
+        err instanceof Error ? err.message : "Failed to save profile.",
+      );
     } finally {
       setIsSaving(false);
     }
@@ -87,7 +97,8 @@ export function ProfilePage() {
           Profile & Settings
         </h1>
         <p className="mt-2 text-xs text-[#53615a]">
-          Your profile is backed directly by your SaferPath account. All fields are optional.
+          Your profile is backed directly by your SaferPath account. All fields
+          are optional.
         </p>
 
         {isLoading ? (
@@ -97,14 +108,20 @@ export function ProfilePage() {
         ) : (
           <form onSubmit={handleSave} className="mt-8 space-y-6">
             {statusMessage && (
-              <div role="status" className="flex items-center gap-2 border border-[#16756c] bg-[#dcefe9] p-3 text-xs font-medium text-[#075b53]">
+              <div
+                role="status"
+                className="flex items-center gap-2 border border-[#16756c] bg-[#dcefe9] p-3 text-xs font-medium text-[#075b53]"
+              >
                 <CheckCircle2 className="h-4 w-4 shrink-0 text-[#16756c]" />
                 {statusMessage}
               </div>
             )}
 
             {errorMessage && (
-              <div role="alert" className="border-l-4 border-[#b6433d] bg-[#fde8e7] p-3 text-xs font-medium text-[#b6433d]">
+              <div
+                role="alert"
+                className="border-l-4 border-[#b6433d] bg-[#fde8e7] p-3 text-xs font-medium text-[#b6433d]"
+              >
                 {errorMessage}
               </div>
             )}
@@ -116,7 +133,8 @@ export function ProfilePage() {
                 Identity & Display
               </div>
               <p className="mt-1 text-xs text-[#62706a]">
-                Choose how you appear or use a pseudonym. Real name is never required.
+                Choose how you appear or use a pseudonym. Real name is never
+                required.
               </p>
 
               <div className="mt-4">
@@ -192,7 +210,9 @@ export function ProfilePage() {
                     onChange={(e) => setReducedMotion(e.target.checked)}
                     className="text-[#16756c]"
                   />
-                  <span>Reduced Motion (Minimize animations and transitions)</span>
+                  <span>
+                    Reduced Motion (Minimize animations and transitions)
+                  </span>
                 </label>
                 <label className="flex items-center gap-3 text-xs font-medium text-[#14231d]">
                   <input
@@ -201,7 +221,9 @@ export function ProfilePage() {
                     onChange={(e) => setHighContrast(e.target.checked)}
                     className="text-[#16756c]"
                   />
-                  <span>High Contrast (Enhanced borders and readable tones)</span>
+                  <span>
+                    High Contrast (Enhanced borders and readable tones)
+                  </span>
                 </label>
               </div>
             </section>
@@ -272,7 +294,9 @@ export function PrivacyPage() {
       }
       await loadConsentsList();
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : "Failed to update consent.");
+      setErrorMessage(
+        err instanceof Error ? err.message : "Failed to update consent.",
+      );
     }
   };
 
@@ -297,18 +321,25 @@ export function PrivacyPage() {
           Privacy Center
         </h1>
         <p className="mt-2 text-xs leading-5 text-[#53615a]">
-          Every consent is granular, explicit, and revocable at any time. Route-planning queries do not enable continuous active-trip tracking.
+          Every consent is granular, explicit, and revocable at any time.
+          Route-planning queries do not enable continuous active-trip tracking.
         </p>
 
         {statusMessage && (
-          <div role="status" className="mt-6 flex items-center gap-2 border border-[#16756c] bg-[#dcefe9] p-3 text-xs font-medium text-[#075b53]">
+          <div
+            role="status"
+            className="mt-6 flex items-center gap-2 border border-[#16756c] bg-[#dcefe9] p-3 text-xs font-medium text-[#075b53]"
+          >
             <CheckCircle2 className="h-4 w-4 shrink-0 text-[#16756c]" />
             {statusMessage}
           </div>
         )}
 
         {errorMessage && (
-          <div role="alert" className="mt-6 border-l-4 border-[#b6433d] bg-[#fde8e7] p-3 text-xs font-medium text-[#b6433d]">
+          <div
+            role="alert"
+            className="mt-6 border-l-4 border-[#b6433d] bg-[#fde8e7] p-3 text-xs font-medium text-[#b6433d]"
+          >
             {errorMessage}
           </div>
         )}
@@ -318,10 +349,14 @@ export function PrivacyPage() {
           <div className="flex items-start gap-3">
             <Shield className="mt-0.5 h-5 w-5 shrink-0 text-[#16756c]" />
             <div className="text-xs leading-5 text-[#53615a]">
-              <p className="font-semibold text-[#14231d]">Zero-Surveillance Architecture</p>
+              <p className="font-semibold text-[#14231d]">
+                Zero-Surveillance Architecture
+              </p>
               <ul className="mt-1 list-disc pl-4 space-y-1">
                 <li>No background geolocation when the app is closed.</li>
-                <li>No advertising tracking, commercial resale, or broker sharing.</li>
+                <li>
+                  No advertising tracking, commercial resale, or broker sharing.
+                </li>
                 <li>Trip data retention expires after 7 days automatically.</li>
               </ul>
             </div>
@@ -331,7 +366,8 @@ export function PrivacyPage() {
         {/* Consent Records List */}
         <div className="mt-8">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-[#62706a]">
-            Configurable Permissions & Legal Consents ({PRIMARY_PURPOSES.length})
+            Configurable Permissions & Legal Consents ({PRIMARY_PURPOSES.length}
+            )
           </h2>
 
           {isLoading ? (
@@ -341,13 +377,20 @@ export function PrivacyPage() {
           ) : (
             <div className="mt-3 divide-y border border-[#d8ddd7] bg-[#fffefb] shadow-sm">
               {PRIMARY_PURPOSES.map((purpose) => {
-                const active = items.some((x) => x.purpose === purpose && x.effective);
+                const active = items.some(
+                  (x) => x.purpose === purpose && x.effective,
+                );
                 const label = purposeLabels[purpose] || purpose;
 
                 return (
-                  <div key={purpose} className="flex flex-wrap items-center justify-between gap-4 p-5">
+                  <div
+                    key={purpose}
+                    className="flex flex-wrap items-center justify-between gap-4 p-5"
+                  >
                     <div className="max-w-md">
-                      <span className="block text-sm font-semibold text-[#14231d]">{label}</span>
+                      <span className="block text-sm font-semibold text-[#14231d]">
+                        {label}
+                      </span>
                       <span className="mt-0.5 block text-xs text-[#62706a]">
                         {active
                           ? "Active consent recorded on server. You may withdraw at any time."
