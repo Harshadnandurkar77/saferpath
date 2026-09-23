@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   ArrowRight,
   Clock,
@@ -32,6 +33,7 @@ import type {
   Profile,
   RouteComparisonResponse,
   RouteContextResponse,
+  RouteResponse,
 } from "../../api/types";
 import type { ContextKind, MapHelpPoint, MapRoute } from "../map/mapTypes";
 
@@ -53,6 +55,7 @@ function parseCoordinateInput(str: string): Point | null {
 }
 
 export function HomeView() {
+  const navigate = useNavigate();
   const { account } = useAuth();
   const [profile, setProfile] = useState<Profile | null>(null);
 
@@ -104,6 +107,11 @@ export function HomeView() {
   const [hasConsented, setHasConsented] = useState(false);
   const [isStartingTrip, setIsStartingTrip] = useState(false);
   const [activeTripId, setActiveTripId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (activeTripId) sessionStorage.setItem("saferpath-active-trip", activeTripId);
+    else sessionStorage.removeItem("saferpath-active-trip");
+  }, [activeTripId]);
   const [gpsLocation, setGpsLocation] = useState<[number, number] | null>(null);
   const [breadcrumbs, setBreadcrumbs] = useState<[number, number][]>([]);
 
@@ -189,12 +197,12 @@ export function HomeView() {
 
   // Execute Route Planning — rejects if endpoints missing, NO silent pilot fallback
   const handlePlanRoute = async () => {
-    const startPt = originPoint || parseCoordinateInput(originText);
-    const endPt = destPoint || parseCoordinateInput(destText);
+    const startPt = originPoint;
+    const endPt = destPoint;
 
     if (!startPt || !endPt) {
       setError(
-        "Please specify both a starting point and destination using place search or enter coordinates.",
+        "Select both a starting point and destination from the place suggestions.",
       );
       return;
     }
@@ -287,26 +295,23 @@ export function HomeView() {
 
   // Convert help points for MapLibre
   const mapHelpPoints: MapHelpPoint[] = useMemo(() => {
-    return helpPoints.map((hp) => {
+    return helpPoints.flatMap((hp) => {
+      if (!Number.isFinite(hp.longitude) || !Number.isFinite(hp.latitude)) return [];
       let cat: MapHelpPoint["category"] = "support";
       if (hp.category.includes("POLICE")) cat = "police";
       else if (hp.category.includes("HOSPITAL")) cat = "hospital";
       else if (hp.category.includes("PHARMACY")) cat = "pharmacy";
       else if (hp.category.includes("TRANSIT")) cat = "transport";
 
-      const centerCoord: [number, number] = originPoint
-        ? [originPoint.longitude, originPoint.latitude]
-        : [72.835, 19.057];
-
-      return {
+      return [{
         id: hp.reference,
         name: hp.category.replace(/_/g, " "),
         category: cat,
-        coordinate: centerCoord,
+        coordinate: [hp.longitude, hp.latitude],
         freshness: hp.verification_status,
-      };
+      }];
     });
-  }, [helpPoints, originPoint]);
+  }, [helpPoints]);
 
   const selectedRoute = useMemo(() => {
     return (
@@ -351,7 +356,10 @@ export function HomeView() {
       });
 
       setActiveTripId(trip.trip_id);
+      sessionStorage.setItem("saferpath_current_trip_id", trip.trip_id);
+      sessionStorage.setItem("saferpath-active-trip", trip.trip_id);
       setIsTripConsentOpen(false);
+      navigate("/trips");
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to initiate active trip.",
@@ -370,6 +378,30 @@ export function HomeView() {
     const parsed = destPoint || parseCoordinateInput(destText);
     return parsed || { longitude: 72.84, latitude: 19.054 };
   }, [selectedRoute, destPoint, destText]);
+
+  // Handle dynamic route updates from Smart Deviation re-evaluation
+  const handleRouteUpdated = (
+    newRoute: RouteResponse,
+    newContext?: RouteContextResponse,
+  ) => {
+    setSelectedRouteId(newRoute.id);
+    setComparison((prev) => {
+      if (!prev) return prev;
+      const exists = prev.routes.some((r) => r.id === newRoute.id);
+      return {
+        ...prev,
+        routes: exists
+          ? prev.routes.map((r) => (r.id === newRoute.id ? newRoute : r))
+          : [newRoute, ...prev.routes],
+      };
+    });
+    if (newContext) {
+      setContexts((prev) => ({
+        ...prev,
+        [newRoute.id]: newContext,
+      }));
+    }
+  };
 
   return (
     <div className="flex flex-col lg:flex-row min-h-[calc(100vh-3.5rem)] bg-[#f7f6f1]">
@@ -523,6 +555,7 @@ export function HomeView() {
               }}
               onTripCompleted={() => setActiveTripId(null)}
               onStopTrip={() => setActiveTripId(null)}
+              onRouteUpdated={handleRouteUpdated}
             />
           </div>
         )}
@@ -677,6 +710,8 @@ export function HomeView() {
                 Type starting and destination coordinates (e.g. 19.054, 72.828
                 to 19.054, 72.840) or use current location to compare lighting,
                 footpaths, and help points.
+                Search for your starting point and destination, then compare
+                available routes and their local context.
               </p>
             </div>
           )}
@@ -702,6 +737,7 @@ export function HomeView() {
           breadcrumbCoordinates={breadcrumbs}
           onSelectRoute={(id) => setSelectedRouteId(id)}
           onSelectHelp={(id) => setSelectedHelpPointRef(id)}
+          selectedHelpPoint={selectedHelpPointRef}
         />
 
         {/* Selected Help Point detail popup */}

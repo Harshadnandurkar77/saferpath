@@ -4,7 +4,11 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_transactional_db
 from app.modules.routing.errors import FAILURE_RESPONSES, RoutingFailure
-from app.modules.routing.schemas import RouteComparisonRequest, RouteComparisonResponse
+from app.modules.routing.schemas import (
+    RouteComparisonRequest,
+    RouteComparisonResponse,
+    RouteResponse,
+)
 from app.modules.routing.service import RouteComparisonService
 from app.schemas.errors import ErrorEnvelope
 
@@ -37,3 +41,26 @@ def create_route_request(
             error={"code": code, "message": message, "request_id": request.state.request_id}
         ).model_dump(exclude_none=True)
         return JSONResponse(status_code=status_code, content=body)
+
+
+@router.get(
+    "/routes/{route_id}",
+    response_model=RouteResponse,
+    responses={
+        404: {"description": "Route was not found"},
+    },
+)
+def get_route(
+    route_id: str, request: Request, db: Session = Depends(get_transactional_db)
+) -> RouteResponse | JSONResponse:
+    try:
+        return service.get_route(db, route_id)
+    except RoutingFailure as exc:
+        status_code, code, message = FAILURE_RESPONSES.get(
+            exc.category, (404, "ROUTE_NOT_FOUND", "Route was not found.")
+        )
+        body = ErrorEnvelope(
+            error={"code": code, "message": message, "request_id": request.state.request_id}
+        ).model_dump(exclude_none=True)
+        return JSONResponse(status_code=status_code, content=body)
+

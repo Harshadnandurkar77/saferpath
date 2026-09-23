@@ -23,5 +23,6 @@ FAILURE_RESPONSES = {
         "IDEMPOTENCY_CONFLICT",
         "Idempotency key was used for a different request.",
     ),
+    "route_not_found": (404, "ROUTE_NOT_FOUND", "Route was not found."),
     "persistence": (500, "ROUTING_PERSISTENCE_FAILED", "Route request could not be saved."),
 }

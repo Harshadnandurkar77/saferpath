@@ -11,14 +11,14 @@ import {
   AlertTriangle,
   Radio,
 } from "lucide-react";
-import { IsometricRouteCanvas } from "../components/landing/IsometricRouteCanvas";
+import { HeroMapPulse } from "../components/landing/HeroMapPulse";
 import { TimeContextDemo } from "../components/landing/TimeContextDemo";
 import { SaferPathLogo } from "../components/brand/SaferPathLogo";
 import { ThemeToggle } from "../components/brand/ThemeToggle";
 
 export function LandingPage() {
   return (
-    <div className="min-h-screen bg-[var(--paper,#fbfbf9)] text-[var(--ink,#14231d)] font-sans">
+    <div className="landing-shell min-h-screen bg-[var(--paper,#fbfbf9)] text-[var(--ink,#14231d)] font-sans">
       {/* =====================================================
           1. PUBLIC NAVIGATION
       ===================================================== */}
@@ -71,18 +71,21 @@ export function LandingPage() {
       {/* =====================================================
           2. HERO SECTION
       ===================================================== */}
-      <section className="relative overflow-hidden pt-12 pb-16 sm:pt-16 sm:pb-24">
+      <section className="landing-hero relative overflow-hidden pt-12 pb-16 sm:pt-16 sm:pb-24">
+        <div className="landing-hero__grid" aria-hidden="true" />
+        <div className="landing-hero__orb landing-hero__orb--one" aria-hidden="true" />
+        <div className="landing-hero__orb landing-hero__orb--two" aria-hidden="true" />
         <div className="mx-auto max-w-7xl px-5 sm:px-8">
           <div className="grid items-center gap-12 lg:grid-cols-12 lg:gap-8">
             {/* Left Content */}
-            <div className="lg:col-span-6">
+            <div className="landing-reveal lg:col-span-6">
               <div className="inline-flex items-center gap-2 rounded-full border border-[var(--teal,#16756c)]/30 bg-[var(--teal-soft,#eef7f4)] px-3.5 py-1 text-xs font-medium text-[var(--teal,#0e5c54)]">
                 <span className="h-2 w-2 rounded-full bg-[var(--teal,#16756c)] animate-pulse" />
                 Context-aware mobility for urban travellers
               </div>
 
-              <h1 className="mt-6 font-serif text-4xl font-bold tracking-tight text-[var(--ink,#14231d)] sm:text-5xl lg:text-6xl leading-[1.08]">
-                Choose your route with more context.
+              <h1 className="mt-6 max-w-xl font-serif text-4xl font-semibold tracking-[-0.06em] text-[var(--ink,#14231d)] sm:text-5xl lg:text-[4.75rem] leading-[0.94]">
+                The route nobody <span className="landing-gradient-text italic">warned you</span> about.
               </h1>
 
               <p className="mt-6 text-base text-[var(--muted,#53615a)] sm:text-lg leading-relaxed max-w-xl">
@@ -96,7 +99,7 @@ export function LandingPage() {
                   to="/login"
                   className="inline-flex items-center gap-2 rounded-md bg-[var(--teal,#16756c)] px-6 py-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#075b53]"
                 >
-                  Plan a route
+                  See the route change
                   <ArrowRight className="h-4 w-4" />
                 </Link>
                 <a
@@ -131,8 +134,8 @@ export function LandingPage() {
             </div>
 
             {/* Right 3D Visual */}
-            <div className="lg:col-span-6">
-              <IsometricRouteCanvas />
+            <div className="landing-reveal landing-reveal--late hero-visual-stack lg:col-span-6">
+              <HeroMapPulse />
             </div>
           </div>
         </div>

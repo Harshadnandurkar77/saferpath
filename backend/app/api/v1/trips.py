@@ -1,13 +1,17 @@
 import json
+import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Header, Query, Request, status
 from fastapi.responses import JSONResponse, StreamingResponse
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.db.session import get_db, get_transactional_db
+from app.models.routing import Route
+from app.modules.routing.schemas import Point
 from app.modules.trips.schemas import (
     DeviationResponseRequest,
     DeviationResponseResult,
@@ -73,6 +77,7 @@ FAILURES = {
     "contact_revoked": (409, "CONTACT_REVOKED", "Trusted contact has been revoked."),
     "verification_expired": (410, "VERIFICATION_EXPIRED", "Verification token has expired."),
     "invalid_verification": (400, "INVALID_VERIFICATION", "Verification token is invalid."),
+    "verification_delivery_unavailable": (503, "VERIFICATION_DELIVERY_UNAVAILABLE", "Verification delivery is unavailable."),
     "contact_not_verified": (409, "CONTACT_NOT_VERIFIED", "Trusted contact is not verified."),
     "grant_not_found": (404, "GRANT_NOT_FOUND", "Sharing grant was not found."),
     "grant_conflict": (409, "GRANT_CONFLICT", "Sharing grant already exists for this contact."),
@@ -80,6 +85,7 @@ FAILURES = {
     "grant_expired": (410, "GRANT_EXPIRED", "Sharing grant has expired."),
     "scope_not_permitted": (403, "SCOPE_NOT_PERMITTED", "Scope is not permitted under this grant."),
     "deviation_not_found": (404, "DEVIATION_NOT_FOUND", "Active deviation was not found for this trip."),
+    "demo_unavailable": (404, "DEMO_UNAVAILABLE", "Demo deviation is unavailable in this environment."),
 }
 
 
@@ -210,6 +216,43 @@ def respond_to_deviation(
 ) -> DeviationResponseResult | JSONResponse:
     try:
         return service.respond_deviation(db, trip_id, payload)
+    except TripFailure as exc:
+        return failure(request, exc)
+
+
+@router.post("/trips/{trip_id}/demo-deviation", response_model=TripPollResponse)
+def trigger_demo_deviation(
+    trip_id: str,
+    request: Request,
+    session_id: str = Query(min_length=1, max_length=128),
+    db: Session = Depends(get_transactional_db),
+) -> TripPollResponse | JSONResponse:
+    try:
+        if get_settings().app_env.lower() in {"production", "release"}:
+            raise TripFailure("demo_unavailable")
+        trip = service.owned(db, trip_id, session_id)
+        if trip.status not in {"ACTIVE", "DEVIATED"}:
+            raise TripFailure("invalid_transition")
+        pt_coords = db.execute(
+            select(func.ST_X(func.ST_StartPoint(Route.geometry)), func.ST_Y(func.ST_StartPoint(Route.geometry)))
+            .where(Route.id == trip.route_id)
+        ).first()
+        if pt_coords and pt_coords[0] is not None and pt_coords[1] is not None:
+            dev_point = Point(longitude=float(pt_coords[0]) + 0.02, latitude=float(pt_coords[1]) + 0.02)
+        else:
+            dev_point = Point(longitude=72.90, latitude=19.10)
+
+        now = datetime.now(UTC)
+        event_payload = TripEventRequest(
+            event_id=f"demo-dev-{uuid.uuid4().hex[:16]}",
+            idempotency_key=f"demo-dev-idemp-{uuid.uuid4().hex[:16]}",
+            event_type="TRIP_UPDATED",
+            actor="USER",
+            occurred_at=now,
+            location=dev_point,
+        )
+        service.event(db, trip_id, session_id, event_payload)
+        return service.poll(db, trip_id, session_id)
     except TripFailure as exc:
         return failure(request, exc)
 

@@ -5,7 +5,11 @@ export const apiBaseUrl = (import.meta.env.VITE_API_URL || "/v1").replace(
 );
 let token: string | null = sessionStorage.getItem("saferpath_session");
 export const session = {
-  get: () => token,
+  /** Resolve at request time so login, restored sessions, and HMR cannot use a stale token. */
+  get: () => {
+    token = sessionStorage.getItem("saferpath_session");
+    return token;
+  },
   set: (value: string) => {
     token = value;
     sessionStorage.setItem("saferpath_session", value);
@@ -34,12 +38,15 @@ export async function api<T>(
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), 15000);
   try {
+    const authorizationToken = authenticated ? session.get() : null;
     const response = await fetch(`${apiBaseUrl}${path}`, {
       ...init,
       signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
-        ...(authenticated && token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(authorizationToken
+          ? { Authorization: `Bearer ${authorizationToken}` }
+          : {}),
         ...((init.headers as Record<string, string>) || {}),
       },
     });

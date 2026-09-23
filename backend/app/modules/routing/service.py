@@ -11,6 +11,7 @@ from app.models.routing import Route, RouteRequest, RouteSegment
 from app.modules.routing.errors import RoutingFailure
 from app.modules.routing.fixture import FixtureRoutingProvider
 from app.modules.routing.normalization import RouteNormalizationError, normalize_route
+from app.modules.routing.osrm import OsrmRoutingProvider
 from app.modules.routing.provider import ProviderRouteRequest, RoutingProvider, RoutingProviderError
 from app.modules.routing.schemas import (
     RouteComparisonRequest,
@@ -31,6 +32,12 @@ def _point_wkt(longitude: float, latitude: float) -> str:
 class RouteComparisonService:
     def __init__(self, provider: RoutingProvider | None = None) -> None:
         self.provider = provider or FixtureRoutingProvider()
+        if provider is not None:
+            self.provider = provider
+        elif get_settings().routing_provider.lower() == "fixture":
+            self.provider = FixtureRoutingProvider()
+        else:
+            self.provider = OsrmRoutingProvider()
 
     def create(self, db: Session, payload: RouteComparisonRequest) -> RouteComparisonResponse:
         existing = db.scalar(
@@ -65,7 +72,7 @@ class RouteComparisonService:
             raise RoutingFailure(categories.get(exc.category, "malformed_response")) from exc
         except RouteNormalizationError as exc:
             raise RoutingFailure("malformed_response") from exc
-        if not 2 <= len(normalized_routes) <= 3:
+        if not 1 <= len(normalized_routes) <= 3:
             raise RoutingFailure("malformed_response")
         settings = get_settings()
         request = RouteRequest(
@@ -195,6 +202,38 @@ class RouteComparisonService:
             route_preference=request.route_preference,
             provider_source=self.provider.name,
             routes=routes,
+        )
+
+    def get_route(self, db: Session, route_id: str) -> RouteResponse:
+        import uuid
+
+        try:
+            r_uuid = uuid.UUID(route_id)
+        except ValueError:
+            raise RoutingFailure("route_not_found") from None
+        route = db.get(Route, r_uuid)
+        if not route:
+            raise RoutingFailure("route_not_found")
+        route_coords = self._read_geometry(db, Route.geometry, route.id)
+        segments = [
+            SegmentResponse(
+                id=segment.canonical_id,
+                sequence=segment.sequence,
+                geometry=self._read_geometry(db, RouteSegment.geometry, segment.id),
+                length_meters=segment.length_meters,
+                travel_seconds=segment.travel_seconds,
+            )
+            for segment in sorted(route.segments, key=lambda item: item.sequence)
+        ]
+        return RouteResponse(
+            id=str(route.id),
+            sequence=route.sequence,
+            provider=route.provider,
+            provider_metadata=route.provider_metadata,
+            duration_seconds=route.duration_seconds,
+            distance_meters=route.distance_meters,
+            geometry=route_coords,
+            segments=segments,
         )
 
     @staticmethod

@@ -22,6 +22,8 @@ from app.models.trips import (
 )
 from app.modules.context.service import SafetyContextService
 from app.modules.routing.normalization import _coordinates, canonical_segment_id
+from app.modules.routing.provider import ProviderRouteRequest, RoutingProviderError
+from app.modules.routing.service import RouteComparisonService
 from app.modules.trips.emergency import (
     EmergencyHandoffProvider,
     UnavailableEmergencyHandoffProvider,
@@ -54,6 +56,27 @@ from app.modules.trips.schemas import (
 class TripFailure(Exception):
     def __init__(self, category: str) -> None:
         self.category = category
+
+
+class TrustedContactVerificationProvider:
+    def generate(self) -> str:
+        return f"{secrets.randbelow(1_000_000):06d}"
+
+    def send(self, recipient: str, code: str) -> None:
+        raise NotImplementedError
+
+
+class DevelopmentTrustedContactVerificationProvider(TrustedContactVerificationProvider):
+    """Development/test delivery boundary; it never exposes the recipient."""
+
+    def send(self, _recipient: str, code: str) -> None:
+        if get_settings().app_env.lower() not in {"production", "release"}:
+            print(f"[DEV TRUSTED CONTACT OTP] {code}", flush=True)
+
+
+class UnavailableTrustedContactVerificationProvider(TrustedContactVerificationProvider):
+    def send(self, _recipient: str, _code: str) -> None:
+        raise TripFailure("verification_delivery_unavailable")
 
 HANDOFF_TRANSITIONS = {"GUIDANCE_DISPLAYED": {"CALL_INITIATED", "CALL_OPENED", "CANCELLED", "EXPIRED"}, "CALL_INITIATED": {"CALL_OPENED", "FAILED", "CANCELLED", "EXPIRED"}, "CALL_OPENED": {"FAILED", "CANCELLED", "EXPIRED"}, "SUBMITTED_APPROVED_INTEGRATION": {"OFFICIAL_CONFIRMATION", "FAILED", "UNAVAILABLE", "CANCELLED", "EXPIRED"}, "OFFICIAL_CONFIRMATION": set(), "FAILED": set(), "UNAVAILABLE": set(), "CANCELLED": set(), "EXPIRED": set()}
 
@@ -265,10 +288,16 @@ class TripService:
         notification_provider: NotificationProvider | None = None,
         context_service: SafetyContextService | None = None,
         emergency_provider: EmergencyHandoffProvider | None = None,
+        trusted_contact_provider: TrustedContactVerificationProvider | None = None,
     ) -> None:
         self.notification_provider = notification_provider or UnavailableNotificationProvider()
         self.context_service = context_service or SafetyContextService()
         self.emergency_provider = emergency_provider or UnavailableEmergencyHandoffProvider()
+        self.trusted_contact_provider = trusted_contact_provider or (
+            UnavailableTrustedContactVerificationProvider()
+            if get_settings().app_env.lower() in {"production", "release"}
+            else DevelopmentTrustedContactVerificationProvider()
+        )
 
     def create(self, db: Session, payload: TripCreateRequest) -> TripResponse:
         route = db.scalar(
@@ -638,6 +667,21 @@ class TripService:
                     )
                     db.add(dispatch)
                     db.flush()
+                    job_key = f"{dispatch.id}:deviation_notification_dispatch"
+                    if not db.scalar(
+                        select(JobRun).where(
+                            JobRun.job_type == "deviation_notification_dispatch",
+                            JobRun.idempotency_key == job_key,
+                        )
+                    ):
+                        job = JobRun(
+                            job_type="deviation_notification_dispatch",
+                            idempotency_key=job_key,
+                            status="pending",
+                        )
+                        db.add(job)
+                        db.flush()
+                        TripJobService().run(db, job, payload.occurred_at)
 
                     # Schedule durable job
                     job_key = f"{dispatch.id}:deviation_notification_dispatch"
@@ -756,6 +800,85 @@ class TripService:
                 resp_key,
             )
 
+            # Trusted contact escalation alert
+            contacts = list(
+                db.scalars(
+                    select(TrustedContact).where(
+                        TrustedContact.owner_session_id == trip.owner_session_id,
+                    )
+                ).all()
+            )
+            grants = list(
+                db.scalars(
+                    select(SharingGrant)
+                    .join(TrustedContact)
+                    .where(
+                        SharingGrant.trip_id == trip.id,
+                        SharingGrant.status == "ACTIVE",
+                    )
+                ).all()
+            )
+            for g in grants:
+                if g.contact not in contacts:
+                    contacts.append(g.contact)
+
+            # Record internal event
+            self.internal_event(
+                db,
+                trip,
+                "TRUSTED_CONTACT_ALERT_DISPATCHED",
+                payload.occurred_at,
+                {
+                    "alert_reason": "UNINTENDED_DEVIATION",
+                    "contact_count": len(contacts),
+                    "action_required": "CHECK_IN_OR_CALL",
+                },
+                f"alert:{deviation.public_reference}:{payload.idempotency_key}",
+            )
+
+            # Queue dispatches for contacts
+            for contact in contacts:
+                dispatch_key = f"alert_dev:{deviation.id}:{contact.id}"
+                if not db.scalar(
+                    select(NotificationDispatch).where(NotificationDispatch.idempotency_key == dispatch_key)
+                ):
+                    dispatch = NotificationDispatch(
+                        public_reference=f"notif_{secrets.token_urlsafe(16)}",
+                        trip_id=trip.id,
+                        contact_id=contact.id,
+                        recipient_reference=contact.contact_reference,
+                        event_type="UNINTENDED_DEVIATION_ALERT",
+                        channel="SMS" if contact.contact_reference.startswith("+") else "IN_APP",
+                        status="QUEUED",
+                        idempotency_key=dispatch_key,
+                        payload={
+                            "message": f"EMERGENCY ALERT: Route deviation detected for trip {trip.public_reference}. Traveler confirmed deviation was NOT intentional.",
+                            "trip_id": trip.public_reference,
+                            "deviation_id": deviation.public_reference,
+                        },
+                    )
+                    db.add(dispatch)
+                    db.flush()
+
+            # Output clearly in the terminal during development
+            if get_settings().app_env.lower() not in {"production", "release"}:
+                contact_names = (
+                    ", ".join(f"{c.display_name} ({c.contact_reference})" for c in contacts)
+                    if contacts
+                    else "All designated emergency contacts"
+                )
+                print(
+                    f"\n[DEV ALERT] 🚨 TRUSTED CONTACT ALERT DISPATCHED\n"
+                    f"  Trip ID: {trip.public_reference}\n"
+                    f"  Event: Route deviation confirmed UNINTENDED by traveller\n"
+                    f"  Alerted Contacts: {contact_names}\n"
+                    f"  Action: Escalation to emergency contacts & safety circle initiated\n",
+                    f"[DEV ALERT] Trusted contact alert dispatched: "
+                    f"trip={trip.public_reference} deviation={deviation.public_reference} "
+                    f"contacts={contact_names}",
+                    flush=True,
+                )
+
         elif payload.response == "UNSURE":
             deviation.status = "USER_UNCERTAIN"
             self.internal_event(
@@ -791,70 +914,59 @@ class TripService:
             deviation.status = "ALTERNATE_PATH_EVALUATION_FAILED"
             return
 
-        # Build alternate path geometry
-        dev_pt = (
+        endpoint = db.execute(
+            select(func.ST_X(func.ST_EndPoint(Route.geometry)), func.ST_Y(func.ST_EndPoint(Route.geometry)))
+            .where(Route.id == orig_route.id)
+        ).first()
+        startpoint = db.execute(
+            select(func.ST_X(func.ST_StartPoint(Route.geometry)), func.ST_Y(func.ST_StartPoint(Route.geometry)))
+            .where(Route.id == orig_route.id)
+        ).first()
+        if not endpoint or endpoint[0] is None or endpoint[1] is None or not startpoint or startpoint[0] is None or startpoint[1] is None:
+            deviation.status = "ALTERNATE_PATH_EVALUATION_FAILED"
+            return
+        origin_pt = (
             (payload.alternate_location.longitude, payload.alternate_location.latitude)
             if payload.alternate_location
-            else (72.8400, 19.0220)
+            else (float(startpoint[0]), float(startpoint[1]))
         )
-        origin_pt = (72.8373, 19.0269)
-        dest_pt = (72.8433, 19.0180)
-        coords = (origin_pt, dev_pt, dest_pt)
-        normalized_coords = _coordinates(coords)
+        destination_pt = (float(endpoint[0]), float(endpoint[1]))
+        try:
+            provider = RouteComparisonService().provider
+            provider_route = provider.routes(ProviderRouteRequest(origin_pt, destination_pt, "walking"))[0]
+        except (RoutingProviderError, IndexError):
+            deviation.status = "ALTERNATE_PATH_EVALUATION_FAILED"
+            return
+        normalized_coords = _coordinates(provider_route.coordinates)
 
-        # Create alternate Route entity
+        # Persist the provider-derived route geometry; never create map fixtures.
         alt_route = Route(
             route_request_id=orig_route.route_request_id,
-            provider="alternate_path",
-            provider_route_ref=f"alt-{deviation.public_reference}",
+            provider=provider.name,
+            provider_route_ref=provider_route.reference,
             sequence=orig_route.sequence + 10,
-            duration_seconds=orig_route.duration_seconds + 120,
-            distance_meters=orig_route.distance_meters + 150,
+            duration_seconds=provider_route.duration_seconds,
+            distance_meters=provider_route.distance_meters,
             geometry=func.ST_GeomFromText(
                 "LINESTRING(" + ",".join(f"{lon} {lat}" for lon, lat in normalized_coords) + ")",
                 4326,
             ),
-            provider_metadata={"type": "smart_active_deviation_alternate"},
+            provider_metadata={**provider_route.metadata, "type": "smart_active_deviation_alternate"},
             normalized_state="normalized",
         )
         db.add(alt_route)
         db.flush()
 
-        # Add segments
-        seg1_coords = (normalized_coords[0], normalized_coords[1])
-        seg2_coords = (normalized_coords[1], normalized_coords[2])
-        db.add(
-            RouteSegment(
-                route_id=alt_route.id,
-                canonical_id=canonical_segment_id(seg1_coords),
-                sequence=1,
-                geometry=func.ST_GeomFromText(
-                    "LINESTRING(" + ",".join(f"{lon} {lat}" for lon, lat in seg1_coords) + ")",
-                    4326,
-                ),
-                length_meters=alt_route.distance_meters // 2,
-                travel_seconds=alt_route.duration_seconds // 2,
-            )
-        )
-        db.add(
-            RouteSegment(
-                route_id=alt_route.id,
-                canonical_id=canonical_segment_id(seg2_coords),
-                sequence=2,
-                geometry=func.ST_GeomFromText(
-                    "LINESTRING(" + ",".join(f"{lon} {lat}" for lon, lat in seg2_coords) + ")",
-                    4326,
-                ),
-                length_meters=alt_route.distance_meters - alt_route.distance_meters // 2,
-                travel_seconds=alt_route.duration_seconds - alt_route.duration_seconds // 2,
-            )
-        )
+        for segment in provider_route.segments:
+            segment_coords = _coordinates(segment.coordinates)
+            db.add(RouteSegment(route_id=alt_route.id, canonical_id=canonical_segment_id(segment_coords), sequence=segment.sequence, geometry=func.ST_GeomFromText("LINESTRING(" + ",".join(f"{lon} {lat}" for lon, lat in segment_coords) + ")", 4326), length_meters=segment.length_meters, travel_seconds=segment.travel_seconds))
         db.flush()
 
         # Re-evaluate through the SafetyContextEngine
         try:
             ctx_resp = self.context_service.evaluate(db, str(alt_route.id))
             deviation.alternate_route_id = alt_route.id
+            trip.route_id = alt_route.id
             deviation.context_version_id = uuid.UUID(ctx_resp.context_version)
             deviation.context_band = ctx_resp.route_context_band
             deviation.confidence = ctx_resp.route_confidence
@@ -916,7 +1028,7 @@ class TripService:
             if existing.verification_status != "REVOKED":
                 return self._contact_response(existing)
             # Re-activate revoked contact with new token
-            token = secrets.token_urlsafe(32)
+            token = self.trusted_contact_provider.generate()
             existing.verification_status = "PENDING"
             existing.verification_token_hash = hash_token(token)
             existing.verification_expires_at = datetime.now(UTC) + timedelta(
@@ -926,9 +1038,10 @@ class TripService:
             existing.relationship_label = payload.relationship_label
             existing.revoked_at = None
             db.flush()
-            return self._contact_response(existing, token)
+            self.trusted_contact_provider.send(existing.contact_reference, token)
+            return self._contact_response(existing)
 
-        token = secrets.token_urlsafe(32)
+        token = self.trusted_contact_provider.generate()
         now = datetime.now(UTC)
         contact = TrustedContact(
             public_reference=f"tc_{secrets.token_urlsafe(16)}",
@@ -949,7 +1062,8 @@ class TripService:
         except IntegrityError:
             raise TripFailure("contact_conflict") from None
 
-        return self._contact_response(contact, token)
+        self.trusted_contact_provider.send(contact.contact_reference, token)
+        return self._contact_response(contact)
 
     def verify_contact(
         self, db: Session, contact_id: str, payload: TrustedContactVerifyRequest

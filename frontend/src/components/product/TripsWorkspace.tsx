@@ -37,12 +37,19 @@ import type {
   TrustedContactResponse,
 } from "../../api/types";
 import { Link } from "react-router-dom";
+import { getRoute } from "../../api/routes";
+import { SaferPathMap } from "../map/SaferPathMap";
+import { ActiveTripTracker } from "../app/ActiveTripTracker";
+import type { RouteResponse } from "../../api/types";
 
 export function TripsWorkspace() {
   const [activeTripId, setActiveTripId] = useState<string | null>(() =>
     sessionStorage.getItem("saferpath_current_trip_id"),
   );
   const [tripState, setTripState] = useState<TripPollResponse | null>(null);
+  const [activeRoute, setActiveRoute] = useState<RouteResponse | null>(null);
+  const [currentLocation, setCurrentLocation] = useState<[number, number] | null>(null);
+  const [breadcrumbs, setBreadcrumbs] = useState<[number, number][]>([]);
   const [contacts, setContacts] = useState<TrustedContactResponse[]>([]);
   const [grants, setGrants] = useState<SharingGrantResponse[]>([]);
 
@@ -66,12 +73,15 @@ export function TripsWorkspace() {
     try {
       const data = await getTrip(id);
       setTripState(data);
+      const route = await getRoute(data.selected_route_id);
+      setActiveRoute(route);
       if (
         data.status === "STOPPED" ||
         data.status === "COMPLETED" ||
         data.status === "EXPIRED"
       ) {
         sessionStorage.removeItem("saferpath_current_trip_id");
+        sessionStorage.removeItem("saferpath-active-trip");
       }
     } catch {
       // Trip not found or closed
@@ -178,11 +188,7 @@ export function TripsWorkspace() {
       setIsAddContactOpen(false);
       setContactName("");
       setContactReference("");
-      if (newContact.verification_token) {
-        setActionMessage(
-          `Contact added. Verification token for testing: ${newContact.verification_token}`,
-        );
-      }
+      setActionMessage("Contact added. Enter the verification code sent to your trusted contact.");
     } catch (err) {
       setErrorMessage(
         err instanceof Error ? err.message : "Failed to add contact.",
@@ -465,6 +471,31 @@ export function TripsWorkspace() {
               </div>
             </div>
 
+            {activeRoute && activeRoute.geometry.length > 1 && (
+              <div className="mt-6 grid gap-5 border-t border-[#d8ddd7] pt-5 lg:grid-cols-2">
+                <div className="min-h-[320px] overflow-hidden rounded-xl">
+                  <SaferPathMap
+                    className="h-[320px] w-full"
+                    routes={[{ id: activeRoute.id, label: "Active route", coordinates: activeRoute.geometry, context: "good" }]}
+                    selectedRoute={activeRoute.id}
+                    helpPoints={[]}
+                    originPoint={activeRoute.geometry[0]}
+                    destinationPoint={activeRoute.geometry[activeRoute.geometry.length - 1]}
+                    currentLocation={currentLocation}
+                    breadcrumbCoordinates={breadcrumbs}
+                  />
+                </div>
+                <ActiveTripTracker
+                  tripId={activeTripId}
+                  routeCoordinates={activeRoute.geometry}
+                  destination={{ latitude: activeRoute.geometry[activeRoute.geometry.length - 1][1], longitude: activeRoute.geometry[activeRoute.geometry.length - 1][0], label: "Destination" }}
+                  onLocationUpdate={(location, trail) => { setCurrentLocation(location); setBreadcrumbs(trail); }}
+                  onTripCompleted={() => { sessionStorage.removeItem("saferpath_current_trip_id"); sessionStorage.removeItem("saferpath-active-trip"); setActiveTripId(null); setTripState(null); }}
+                  onStopTrip={() => { sessionStorage.removeItem("saferpath_current_trip_id"); sessionStorage.removeItem("saferpath-active-trip"); setActiveTripId(null); setTripState(null); }}
+                />
+              </div>
+            )}
+
             {/* Emergency Action Strip */}
             <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-[#d8ddd7] pt-5">
               <div className="flex items-center gap-2 text-xs text-[#62706a]">
@@ -675,7 +706,7 @@ export function TripsWorkspace() {
                       onClick={() =>
                         setVerificationInput({
                           id: contact.contact_id,
-                          token: contact.verification_token || "",
+                          token: "",
                         })
                       }
                       className="flex items-center gap-1 border border-[#16756c] px-2.5 py-1.5 text-xs font-semibold text-[#075b53] hover:bg-[#dcefe9]"

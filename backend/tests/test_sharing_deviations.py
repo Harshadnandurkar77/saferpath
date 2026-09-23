@@ -1,3 +1,4 @@
+import re
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
@@ -8,11 +9,22 @@ from sqlalchemy import select, text
 from app.db.session import SessionLocal
 from app.models.trips import (
     NotificationDispatch,
+    TrustedContact,
 )
 from app.modules.trips.schemas import (
     SharingGrantCreateRequest,
 )
-from app.modules.trips.service import TripService
+from app.modules.trips.service import DevelopmentTrustedContactVerificationProvider, TripService
+
+
+def _terminal_otp(capsys) -> str:
+    output = capsys.readouterr().out
+    match = re.search(r"\[DEV TRUSTED CONTACT OTP\] (\d{6})", output)
+    assert match is not None, f"Expected trusted-contact OTP in terminal output, got: {output}"
+    assert "@example.com" not in output
+    assert "hash" not in output.lower()
+    assert "token" not in output.lower()
+    return match.group(1)
 
 
 def _route(client, owner="trip-owner"):
@@ -76,7 +88,7 @@ def cleanup():
 # ===========================================================================
 
 
-def test_trusted_contact_lifecycle(client):
+def test_trusted_contact_lifecycle(client, capsys):
     owner = "user-alice"
     # Create contact
     payload = {
@@ -90,8 +102,8 @@ def test_trusted_contact_lifecycle(client):
     data = res.json()
     assert data["verification_status"] == "PENDING"
     assert data["contact_reference"] == "bob@example.com"
-    token = data["verification_token"]
-    assert token is not None
+    token = _terminal_otp(capsys)
+    assert data["verification_token"] is None
     contact_id = data["contact_id"]
 
     # Listing contacts returns pending contact without token
@@ -141,12 +153,61 @@ def test_trusted_contact_lifecycle(client):
     assert not any(c["contact_id"] == contact_id for c in active_listed)
 
 
+def test_trusted_contact_otp_is_dynamic_and_expires(client, capsys):
+    first = client.post(
+        "/v1/trusted-contacts",
+        json={
+            "session_id": "test-otp-owner",
+            "contact_reference": "first-otp@example.com",
+            "display_name": "First",
+            "relationship_label": "friend",
+        },
+    )
+    first_code = _terminal_otp(capsys)
+    second = client.post(
+        "/v1/trusted-contacts",
+        json={
+            "session_id": "test-otp-owner",
+            "contact_reference": "second-otp@example.com",
+            "display_name": "Second",
+            "relationship_label": "friend",
+        },
+    )
+    second_code = _terminal_otp(capsys)
+    assert first_code != second_code
+    assert first.json()["verification_token"] is None
+    assert second.json()["verification_token"] is None
+
+    with SessionLocal.begin() as db:
+        contact = db.scalar(
+            select(TrustedContact).where(
+                TrustedContact.public_reference == first.json()["contact_id"]
+            )
+        )
+        contact.verification_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+
+    expired = client.post(
+        f"/v1/trusted-contacts/{first.json()['contact_id']}/verify",
+        json={"session_id": "test-otp-owner", "verification_token": first_code},
+    )
+    assert expired.status_code == 410
+
+
+def test_trusted_contact_provider_is_silent_in_production(capsys, monkeypatch):
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "app_env", "production")
+    DevelopmentTrustedContactVerificationProvider().send("hidden@example.com", "123456")
+    assert capsys.readouterr().out == ""
+
+
 # ===========================================================================
 # 2. SHARING GRANTS TESTS
 # ===========================================================================
 
 
-def test_sharing_grants_creation_expiry_and_revocation(client, cleanup):
+def test_sharing_grants_creation_expiry_and_revocation(client, cleanup, capsys):
     owner = "trip-owner"
     trip, route_key = _trip(client, owner=owner, scope="LOCATION")
     cleanup.append(route_key)
@@ -161,9 +222,10 @@ def test_sharing_grants_creation_expiry_and_revocation(client, cleanup):
             "display_name": "Grant Contact",
             "relationship_label": "family",
         },
-    ).json()
+    )
+    c_res = c_res.json()
     contact_id = c_res["contact_id"]
-    token = c_res["verification_token"]
+    token = _terminal_otp(capsys)
     client.post(
         f"/v1/trusted-contacts/{contact_id}/verify",
         json={"session_id": owner, "verification_token": token},
@@ -225,7 +287,7 @@ def test_sharing_grants_creation_expiry_and_revocation(client, cleanup):
 # ===========================================================================
 
 
-def test_smart_active_deviation_workflow(client, cleanup):
+def test_smart_active_deviation_workflow(client, cleanup, capsys):
     """Full workflow: deviation detected -> confirmation required -> user confirms -> alternate route evaluated."""
     owner = "trip-owner"
     trip, route_key = _trip(client, owner=owner, scope="LOCATION")
@@ -241,11 +303,13 @@ def test_smart_active_deviation_workflow(client, cleanup):
             "display_name": "Smart Dev Contact",
             "relationship_label": "partner",
         },
-    ).json()
+    )
+    c_res = c_res.json()
     contact_id = c_res["contact_id"]
+    token = _terminal_otp(capsys)
     client.post(
         f"/v1/trusted-contacts/{contact_id}/verify",
-        json={"session_id": owner, "verification_token": c_res["verification_token"]},
+        json={"session_id": owner, "verification_token": token},
     )
     grant = client.post(
         "/v1/sharing-grants",
@@ -370,7 +434,7 @@ def test_deviation_user_rejection_and_uncertainty(client, cleanup):
 # ===========================================================================
 
 
-def test_cross_user_isolation(client, cleanup):
+def test_cross_user_isolation(client, cleanup, capsys):
     """User A cannot access or manipulate User B's contacts, grants, trips, or deviations."""
     user_a = "user-alice"
     user_b = "user-bob"
@@ -388,6 +452,7 @@ def test_cross_user_isolation(client, cleanup):
             "relationship_label": "friend",
         },
     ).json()
+    token_a = _terminal_otp(capsys)
 
     # User B cannot see User A's contact in their list
     b_contacts = client.get(f"/v1/trusted-contacts?session_id={user_b}").json()
@@ -397,7 +462,7 @@ def test_cross_user_isolation(client, cleanup):
     assert (
         client.post(
             f"/v1/trusted-contacts/{c_a['contact_id']}/verify",
-            json={"session_id": user_b, "verification_token": c_a["verification_token"]},
+            json={"session_id": user_b, "verification_token": token_a},
         ).status_code
         == 403
     )
@@ -436,7 +501,7 @@ def test_cross_user_isolation(client, cleanup):
 # ===========================================================================
 
 
-def test_concurrent_grant_creation_creates_single_active_grant(client, cleanup):
+def test_concurrent_grant_creation_creates_single_active_grant(client, cleanup, capsys):
     run_id = uuid.uuid4().hex[:8]
     owner = f"concurrent-owner-{run_id}"
     trip, route_key = _trip(client, owner=owner)
@@ -450,11 +515,13 @@ def test_concurrent_grant_creation_creates_single_active_grant(client, cleanup):
             "display_name": "Concurrent Contact",
             "relationship_label": "friend",
         },
-    ).json()
+    )
+    c_res = c_res.json()
     contact_id = c_res["contact_id"]
+    token = _terminal_otp(capsys)
     verify_resp = client.post(
         f"/v1/trusted-contacts/{contact_id}/verify",
-        json={"session_id": owner, "verification_token": c_res["verification_token"]},
+        json={"session_id": owner, "verification_token": token},
     )
     assert verify_resp.status_code == 200, f"verify failed: {verify_resp.json()}"
 
@@ -472,4 +539,79 @@ def test_concurrent_grant_creation_creates_single_active_grant(client, cleanup):
     with ThreadPoolExecutor(max_workers=2) as executor:
         ids = list(executor.map(lambda _: submit(), range(2)))
     assert ids[0] == ids[1]
+
+
+def test_demo_smart_deviation_and_get_route(client, cleanup, capsys):
+    owner = f"demo-owner-{uuid.uuid4().hex[:8]}"
+    trip, route_key = _trip(client, owner=owner)
+    cleanup.append(route_key)
+    trip_id = trip["trip_id"]
+
+    # 1. Trigger demo deviation via POST /v1/trips/{trip_id}/demo-deviation
+    demo_res = client.post(f"/v1/trips/{trip_id}/demo-deviation?session_id={owner}")
+    assert demo_res.status_code == 200
+    demo_data = demo_res.json()
+    assert demo_data["status"] == "DEVIATED"
+    assert demo_data["deviation"] is not None
+    assert demo_data["deviation"]["status"] == "DEVIATION_PENDING_CONFIRMATION"
+    assert demo_data["deviation"]["confirmation_required"] is True
+
+    # 2. Confirm route change (YES path)
+    confirm_res = client.post(
+        f"/v1/trips/{trip_id}/deviation-response",
+        json={
+            "session_id": owner,
+            "idempotency_key": f"idemp-{uuid.uuid4().hex}",
+            "response": "CONFIRM_ROUTE_CHANGE",
+            "occurred_at": datetime.now(UTC).isoformat(),
+        },
+    )
+    assert confirm_res.status_code == 200
+    confirm_data = confirm_res.json()
+    assert confirm_data["status"] == "ALTERNATE_PATH_EVALUATED"
+    alt_route_id = confirm_data["alternate_route_id"]
+    assert alt_route_id is not None
+
+    # 3. Fetch alternate route via GET /v1/routes/{route_id}
+    route_res = client.get(f"/v1/routes/{alt_route_id}")
+    assert route_res.status_code == 200
+    route_data = route_res.json()
+    assert route_data["id"] == alt_route_id
+    assert len(route_data["geometry"]) >= 2
+    assert len(route_data["segments"]) >= 1
+
+    # 4. Test REJECT path (NO path) on a fresh trip
+    trip2, route_key2 = _trip(client, owner=owner)
+    cleanup.append(route_key2)
+    trip2_id = trip2["trip_id"]
+
+    c_res = client.post(
+        "/v1/trusted-contacts",
+        json={
+            "session_id": owner,
+            "contact_reference": "+919876543210",
+            "display_name": "Mom",
+            "relationship_label": "family",
+        },
+    )
+    c_res = c_res.json()
+    token = _terminal_otp(capsys)
+    client.post(
+        f"/v1/trusted-contacts/{c_res['contact_id']}/verify",
+        json={"session_id": owner, "verification_token": token},
+    )
+
+    client.post(f"/v1/trips/{trip2_id}/demo-deviation?session_id={owner}")
+    reject_res = client.post(
+        f"/v1/trips/{trip2_id}/deviation-response",
+        json={
+            "session_id": owner,
+            "idempotency_key": f"idemp-reject-{uuid.uuid4().hex}",
+            "response": "REJECT_ROUTE_CHANGE",
+            "occurred_at": datetime.now(UTC).isoformat(),
+        },
+    )
+    assert reject_res.status_code == 200
+    assert reject_res.json()["status"] == "USER_REJECTED_CHANGE"
+
 

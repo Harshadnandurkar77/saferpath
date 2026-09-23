@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     max_request_body_bytes: int = 1_048_576
     routing_geometry_max_points: int = 1_000
     routing_retention_days: int = 7
+    routing_provider: str = "fixture"
+    routing_osrm_url: str = "https://router.project-osrm.org"
+    routing_osrm_profile: str = "driving"
     report_retention_days: int = 30
     report_stale_hours: int = 24
     report_cluster_minutes: int = 30

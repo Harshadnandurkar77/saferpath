@@ -145,7 +145,7 @@ class TrustedContactCreateRequest(BaseModel):
 class TrustedContactVerifyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     session_id: str = Field(min_length=1, max_length=128)
-    verification_token: str = Field(min_length=8, max_length=128)
+    verification_token: str = Field(min_length=6, max_length=128)
 
 
 class TrustedContactResponse(BaseModel):
@@ -156,7 +156,7 @@ class TrustedContactResponse(BaseModel):
     verification_status: str
     verified_at: datetime | None = None
     created_at: datetime
-    verification_token: str | None = None  # only exposed upon creation for out-of-band flow
+    verification_token: str | None = None
 
 
 # --- Sharing Grant Schemas ---

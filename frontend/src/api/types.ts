@@ -281,6 +281,8 @@ export interface HelpPointResponse {
     | string;
   operating_status: "OPEN" | "CLOSED" | "UNKNOWN" | string;
   sponsor_disclosure: string | null;
+  latitude: number;
+  longitude: number;
 }
 
 // ---------------------------------------------------------------------------

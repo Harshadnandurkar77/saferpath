@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 export function IsometricRouteCanvas() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [reducedMotion, setReducedMotion] = useState(false);
+  const [tilt, setTilt] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -25,9 +26,9 @@ export function IsometricRouteCanvas() {
     const resize = () => {
       const rect = canvas.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
-      canvas.width = rect.width * dpr;
-      canvas.height = rect.height * dpr;
-      ctx.scale(dpr, dpr);
+      canvas.width = Math.round(rect.width * dpr);
+      canvas.height = Math.round(rect.height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     };
     resize();
     window.addEventListener("resize", resize);
@@ -281,7 +282,17 @@ export function IsometricRouteCanvas() {
   }, [reducedMotion]);
 
   return (
-    <div className="relative h-full min-h-[380px] w-full overflow-hidden rounded-2xl border border-[#d8ddd7] bg-[#f7f6f1] p-2 shadow-sm sm:min-h-[440px] lg:min-h-[500px]">
+    <div
+      className="route-model relative h-full min-h-[380px] w-full overflow-hidden rounded-2xl border border-[#d8ddd7] bg-[#f7f6f1] p-2 shadow-sm sm:min-h-[440px] lg:min-h-[500px]"
+      style={{ "--tilt-x": `${tilt.x}deg`, "--tilt-y": `${tilt.y}deg` } as CSSProperties}
+      onPointerMove={(event) => {
+        if (reducedMotion) return;
+        const bounds = event.currentTarget.getBoundingClientRect();
+        setTilt({ x: ((bounds.height / 2 - (event.clientY - bounds.top)) / bounds.height) * 3, y: (((event.clientX - bounds.left) - bounds.width / 2) / bounds.width) * 3 });
+      }}
+      onPointerLeave={() => setTilt({ x: 0, y: 0 })}
+    >
+      <div className="route-model__glow" aria-hidden="true" />
       <canvas ref={canvasRef} className="h-full w-full block" aria-label="3D Isometric City Route Visualization" />
       <div className="pointer-events-none absolute bottom-4 left-4 rounded-md border border-[#bdc9c0] bg-white/90 px-3 py-1.5 text-xs text-[#53615a] backdrop-blur-xs">
         <span className="font-semibold text-[#14231d]">Corridor visualization</span> · Multi-node illumination & context
@@ -289,4 +300,3 @@ export function IsometricRouteCanvas() {
     </div>
   );
 }
-

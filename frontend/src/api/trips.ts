@@ -2,6 +2,7 @@ import { api, generateIdempotencyKey, getEphemeralSessionId } from "./client";
 import type {
   DeviationResponseRequest,
   DeviationResponseResult,
+  Point,
   TripActionRequest,
   TripCreateRequest,
   TripPollResponse,
@@ -88,6 +89,7 @@ export async function respondToDeviation(
   tripId: string,
   response: "CONFIRM_ROUTE_CHANGE" | "REJECT_ROUTE_CHANGE" | "UNSURE",
   sessionId?: string,
+  alternateLocation?: Point | null,
 ): Promise<DeviationResponseResult> {
   const sid = sessionId || getEphemeralSessionId();
   const payload: DeviationResponseRequest = {
@@ -95,6 +97,7 @@ export async function respondToDeviation(
     idempotency_key: generateIdempotencyKey("dev"),
     response,
     occurred_at: new Date().toISOString(),
+    alternate_location: alternateLocation || undefined,
   };
 
   return api<DeviationResponseResult>(
@@ -102,6 +105,20 @@ export async function respondToDeviation(
     {
       method: "POST",
       body: JSON.stringify(payload),
+    },
+    false,
+  );
+}
+
+export async function triggerDemoDeviation(
+  tripId: string,
+  sessionId?: string,
+): Promise<TripPollResponse> {
+  const sid = sessionId || getEphemeralSessionId();
+  return api<TripPollResponse>(
+    `/trips/${encodeURIComponent(tripId)}/demo-deviation?session_id=${encodeURIComponent(sid)}`,
+    {
+      method: "POST",
     },
     false,
   );

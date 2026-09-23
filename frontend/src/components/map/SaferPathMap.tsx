@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import {
   type GeoJSONSource,
@@ -26,6 +26,7 @@ export interface SaferPathMapProps {
   helpPoints: MapHelpPoint[];
   onSelectRoute?: (id: string) => void;
   onSelectHelp?: (id: string) => void;
+  selectedHelpPoint?: string | null;
   className?: string;
   breadcrumbCoordinates?: [number, number][];
   currentLocation?: [number, number] | null;
@@ -39,6 +40,7 @@ export function SaferPathMap({
   helpPoints,
   onSelectRoute,
   onSelectHelp,
+  selectedHelpPoint = null,
   className = "",
   breadcrumbCoordinates = [],
   currentLocation = null,
@@ -47,6 +49,7 @@ export function SaferPathMap({
 }: SaferPathMapProps) {
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
+  const [mapLoaded, setMapLoaded] = useState(false);
 
   useEffect(() => {
     if (!container.current || mapRef.current) return;
@@ -54,9 +57,8 @@ export function SaferPathMap({
     const map = new maplibregl.Map({
       container: container.current,
       style: mapStyle,
-      center: [72.835, 19.057], // Bandra West / Mumbai Pilot corridor center
-      zoom: 13,
-      attributionControl: false,
+      center: [0, 20],
+      zoom: 1.5,
     });
     mapRef.current = map;
 
@@ -170,18 +172,27 @@ export function SaferPathMap({
       map.addSource("sp-help", {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
+        cluster: true,
+        clusterRadius: 42,
+        clusterMaxZoom: 14,
       });
+      map.addLayer({ id: "sp-help-clusters", type: "circle", source: "sp-help", filter: ["has", "point_count"], paint: { "circle-radius": ["step", ["get", "point_count"], 16, 10, 20, 30, 25], "circle-color": "#0f766e", "circle-stroke-color": "#ffffff", "circle-stroke-width": 2 } });
+      map.addLayer({ id: "sp-help-cluster-count", type: "symbol", source: "sp-help", filter: ["has", "point_count"], layout: { "text-field": ["get", "point_count_abbreviated"], "text-size": 11 }, paint: { "text-color": "#ffffff" } });
       map.addLayer({
         id: "sp-help-points",
         type: "circle",
         source: "sp-help",
+        filter: ["!", ["has", "point_count"]],
         paint: {
-          "circle-radius": 7,
-          "circle-color": "#fffefb",
-          "circle-stroke-color": "#16756c",
+          "circle-radius": ["case", ["==", ["get", "id"], selectedHelpPoint || ""], 11, 8],
+          "circle-color": ["match", ["get", "category"], "police", "#1d4ed8", "hospital", "#dc2626", "pharmacy", "#15803d", "transport", "#7c3aed", "#0f766e"],
+          "circle-stroke-color": "#ffffff",
           "circle-stroke-width": 3,
         },
       });
+      map.addLayer({ id: "sp-help-symbol", type: "symbol", source: "sp-help", filter: ["!", ["has", "point_count"]], layout: { "text-field": ["get", "symbol"], "text-size": 10, "text-font": ["Open Sans Bold"] }, paint: { "text-color": "#ffffff" } });
+      map.resize();
+      setMapLoaded(true);
 
       // Interactive click handlers
       map.on("click", "sp-route-alt", (e: MapLayerMouseEvent) => {
@@ -195,6 +206,14 @@ export function SaferPathMap({
       map.on("click", "sp-help-points", (e: MapLayerMouseEvent) => {
         const id = e.features?.[0]?.properties?.id as string | undefined;
         if (id && onSelectHelp) onSelectHelp(id);
+      });
+      map.on("click", "sp-help-clusters", (e) => {
+        const feature = e.features?.[0];
+        const clusterId = feature?.properties?.cluster_id;
+        const source = map.getSource("sp-help") as GeoJSONSource;
+        if (clusterId !== undefined && feature?.geometry.type === "Point") {
+          void source.getClusterExpansionZoom(clusterId).then((zoom) => map.easeTo({ center: feature.geometry.coordinates as [number, number], zoom }));
+        }
       });
 
       map.on("mouseenter", "sp-route-alt", () => {
@@ -214,13 +233,14 @@ export function SaferPathMap({
     return () => {
       map.remove();
       mapRef.current = null;
+      setMapLoaded(false);
     };
-  }, [onSelectHelp, onSelectRoute, selectedRoute]);
+  }, []);
 
   // Update routes, help points, endpoints, breadcrumb and location
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return;
+    if (!map || !mapLoaded) return;
 
     // Update routes
     const routeSource = map.getSource("sp-routes") as GeoJSONSource | undefined;
@@ -232,7 +252,7 @@ export function SaferPathMap({
       type: "FeatureCollection",
       features: helpPoints.map((x) => ({
         type: "Feature" as const,
-        properties: { id: x.id },
+        properties: { id: x.id, category: x.category, symbol: x.category === "police" ? "P" : x.category === "hospital" ? "+" : x.category === "pharmacy" ? "Rx" : x.category === "transport" ? "T" : "!" },
         geometry: { type: "Point" as const, coordinates: x.coordinate },
       })),
     });
@@ -246,6 +266,9 @@ export function SaferPathMap({
         selectedRoute,
       ]);
       map.setFilter("sp-route-alt", ["!=", ["get", "id"], selectedRoute]);
+    }
+    if (map.getLayer("sp-help-points")) {
+      map.setPaintProperty("sp-help-points", "circle-radius", ["case", ["==", ["get", "id"], selectedHelpPoint || ""], 11, 8]);
     }
 
     // Update endpoints
@@ -315,7 +338,18 @@ export function SaferPathMap({
       activeRoute.coordinates.forEach((coord) => bounds.extend(coord));
       if (currentLocation) bounds.extend(currentLocation);
       map.fitBounds(bounds, { padding: 45, maxZoom: 15, duration: 1000 });
+    } else if (originPoint || destinationPoint) {
+      const bounds = new maplibregl.LngLatBounds();
+      if (originPoint) bounds.extend(originPoint);
+      if (destinationPoint) bounds.extend(destinationPoint);
+      if (originPoint && destinationPoint) {
+        map.fitBounds(bounds, { padding: 80, maxZoom: 14, duration: 750 });
+      } else {
+        map.flyTo({ center: originPoint || destinationPoint!, zoom: 15, duration: 750 });
+      }
     }
+    const selectedHelp = helpPoints.find((point) => point.id === selectedHelpPoint);
+    if (selectedHelp) map.flyTo({ center: selectedHelp.coordinate, zoom: Math.max(map.getZoom(), 15), duration: 650 });
   }, [
     routes,
     helpPoints,
@@ -324,6 +358,8 @@ export function SaferPathMap({
     currentLocation,
     originPoint,
     destinationPoint,
+    selectedHelpPoint,
+    mapLoaded,
   ]);
 
   return (

@@ -1,5 +1,9 @@
 import { api, generateIdempotencyKey, getEphemeralSessionId } from "./client";
-import type { RouteComparisonRequest, RouteComparisonResponse } from "./types";
+import type {
+  RouteComparisonRequest,
+  RouteComparisonResponse,
+  RouteResponse,
+} from "./types";
 
 export async function compareRoutes(
   params: Omit<RouteComparisonRequest, "idempotency_key" | "session_id"> & {
@@ -20,5 +24,15 @@ export async function compareRoutes(
       body: JSON.stringify(payload),
     },
     false, // Works unauthenticated or authenticated
+  );
+}
+
+export async function getRoute(routeId: string): Promise<RouteResponse> {
+  return api<RouteResponse>(
+    `/routes/${encodeURIComponent(routeId)}`,
+    {
+      method: "GET",
+    },
+    false,
   );
 }

@@ -12,6 +12,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { SaferPathLogo } from "../brand/SaferPathLogo";
 import { ThemeToggle } from "../brand/ThemeToggle";
+import { GlobalEmergencyAction } from "./GlobalEmergencyAction";
 
 export { RouteWorkspace } from "./RouteWorkspace";
 export { ReportsWorkspace } from "./ReportsWorkspace";
@@ -136,6 +137,7 @@ export function ProductShell({ children }: { children: ReactNode }) {
 
       {/* Main Content Area (extra bottom padding on mobile for bottom tabs) */}
       <main className="md:ml-64 pb-16 md:pb-0">{children}</main>
+      <GlobalEmergencyAction />
 
       {/* Mobile Bottom Navigation Bar */}
       <nav

@@ -16,23 +16,6 @@ interface PlaceSearchProps {
   disabled?: boolean;
 }
 
-function parseCoordinateInput(str: string): Point | null {
-  if (!str) return null;
-  const parts = str
-    .split(/[, ]+/)
-    .map((s) => parseFloat(s.trim()))
-    .filter((n) => !isNaN(n));
-  if (parts.length === 2) {
-    const [a, b] = parts;
-    if (Math.abs(a) <= 90 && Math.abs(b) <= 180) {
-      return { latitude: a, longitude: b };
-    } else if (Math.abs(b) <= 90 && Math.abs(a) <= 180) {
-      return { latitude: b, longitude: a };
-    }
-  }
-  return null;
-}
-
 export function PlaceSearch({
   label,
   placeholder = "Search a place, landmark, or street...",
@@ -83,21 +66,6 @@ export function PlaceSearch({
     if (trimmed.length < 2) {
       setResults([]);
       setIsOpen(false);
-      return;
-    }
-
-    // Check if user entered raw coordinates
-    const directPoint = parseCoordinateInput(trimmed);
-    if (directPoint) {
-      setResults([
-        {
-          display_name: `Coordinates: ${directPoint.latitude.toFixed(5)}, ${directPoint.longitude.toFixed(5)}`,
-          latitude: directPoint.latitude,
-          longitude: directPoint.longitude,
-          place_type: "coordinates",
-        },
-      ]);
-      setIsOpen(true);
       return;
     }
 
@@ -231,7 +199,7 @@ export function PlaceSearch({
 
           {results.length === 0 && !loading && (
             <li className="p-3 text-center text-[11px] text-[var(--muted,#62706a)]">
-              No matching places found. You can also type direct coordinates (e.g. 19.054, 72.828).
+              No matching places found. Try a landmark, station, neighbourhood, or full address.
             </li>
           )}
 
@@ -257,4 +225,3 @@ export function PlaceSearch({
     </div>
   );
 }
-
