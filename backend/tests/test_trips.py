@@ -7,6 +7,7 @@ from sqlalchemy import func, select, text
 
 from app.db.session import SessionLocal
 from app.models.job_run import JobRun
+from app.models.routing import Route
 from app.models.trips import TripEvent, TripSession
 from app.modules.trips.schemas import TripEventRequest
 from app.modules.trips.service import TripJobService, TripService
@@ -87,6 +88,36 @@ def test_trip_requires_owned_route_and_explicit_consent(client, cleanup):
     assert created.json()["status"] == "ACTIVE"
     assert created.json()["sharing_scope"] == "STATUS_ONLY"
     assert created.json()["consent_version"] == "v1"
+
+
+def test_trip_accepts_a_normalized_route_from_a_non_fixture_provider(client, cleanup):
+    """Trip creation must accept a persisted, normalized provider route.
+
+    The test route uses deterministic fixture geometry, then is labelled as an
+    OSRM result to cover the provider-agnostic contract used in development.
+    """
+    route_id, route_key = _route(client, "osrm-trip-owner")
+    cleanup.append(route_key)
+    with SessionLocal.begin() as session:
+        route = session.get(Route, uuid.UUID(route_id))
+        assert route is not None
+        route.provider = "osrm"
+
+    response = client.post(
+        "/v1/trips",
+        json={
+            "route_id": route_id,
+            "session_id": "osrm-trip-owner",
+            "planned_arrival": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
+            "travel_mode": "walking",
+            "active_trip_consent": True,
+            "consent_reference": "active-trip-policy",
+            "consent_version": "v1",
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["status"] == "ACTIVE"
 
 
 def test_events_checkin_stop_and_ownership_idempotency(client, cleanup):

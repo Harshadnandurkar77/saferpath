@@ -1,10 +1,9 @@
-import { useState, useEffect, useId, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import {
   ArrowRight,
   Clock,
   Info,
   LifeBuoy,
-  MapPin,
   RefreshCw,
   ShieldAlert,
 } from "lucide-react";
@@ -14,6 +13,7 @@ import { getRouteContext } from "../../api/context";
 import { getNearbyHelpPoints } from "../../api/helpPoints";
 import { createTrip } from "../../api/trips";
 import { createConsent, listConsents } from "../../api/privacy";
+import { PlaceSearch } from "../app/PlaceSearch";
 import type {
   HelpPointResponse,
   Point,
@@ -23,10 +23,6 @@ import type {
 } from "../../api/types";
 import type { MapHelpPoint, MapRoute } from "../map/mapTypes";
 import { useNavigate } from "react-router-dom";
-
-// Pilot corridor: Shivaji Park / Bandra West corridor in Mumbai
-const DEFAULT_ORIGIN: Point = { longitude: 72.828, latitude: 19.054 };
-const DEFAULT_DESTINATION: Point = { longitude: 72.84, latitude: 19.054 };
 
 const TIME_SLOTS = [
   { label: "6:00 PM", time: "18:00:00" },
@@ -96,15 +92,13 @@ function formatContextBand(band?: string): {
 
 export function RouteWorkspace() {
   const navigate = useNavigate();
-  const originInputId = useId();
-  const destInputId = useId();
 
-  const [origin] = useState<Point>(DEFAULT_ORIGIN);
-  const [destination] = useState<Point>(DEFAULT_DESTINATION);
-  const [originLabel, setOriginLabel] = useState(
-    "Bandra Reclamation / Hill Rd",
-  );
-  const [destLabel, setDestLabel] = useState("Bandra Station West");
+  // ── Place search state (real coordinates from geocoding) ──────────────────
+  const [originPoint, setOriginPoint] = useState<Point | null>(null);
+  const [destPoint, setDestPoint] = useState<Point | null>(null);
+  const [originText, setOriginText] = useState("");
+  const [destText, setDestText] = useState("");
+
   const [selectedTimeIndex, setSelectedTimeIndex] = useState(1); // 9:00 PM default
 
   // Server state
@@ -124,13 +118,30 @@ export function RouteWorkspace() {
   >(null);
 
   // Status flags
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isStartingTrip, setIsStartingTrip] = useState(false);
   const [tripError, setTripError] = useState<string | null>(null);
 
-  // Fetch routes from backend
+  // Clear route results when user changes inputs
+  const clearRouteResults = () => {
+    setComparison(null);
+    setContexts({});
+    setHelpPoints([]);
+    setSelectedRouteId("");
+    setSelectedHelpPointRef(null);
+    setSelectedSegmentId(null);
+  };
+
+  // Fetch routes from backend using real user-selected coordinates
   const fetchRoutes = useCallback(async () => {
+    if (!originPoint || !destPoint) {
+      setError(
+        "Please select both a starting point and destination from the place suggestions.",
+      );
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
     try {
@@ -139,8 +150,8 @@ export function RouteWorkspace() {
       const requestedLocalTime = `${todayDate}T${timeSlot}`;
 
       const res = await compareRoutes({
-        origin,
-        destination,
+        origin: originPoint,
+        destination: destPoint,
         timezone: "Asia/Kolkata",
         requested_local_time: requestedLocalTime,
         time_mode: "departure",
@@ -171,11 +182,11 @@ export function RouteWorkspace() {
         setContexts(ctxMap);
       }
 
-      // Fetch nearby help points along corridor
+      // Fetch nearby help points along corridor using real origin coordinates
       try {
         const hp = await getNearbyHelpPoints({
-          latitude: origin.latitude,
-          longitude: origin.longitude,
+          latitude: originPoint.latitude,
+          longitude: originPoint.longitude,
           radius_meters: 2500,
         });
         setHelpPoints(hp);
@@ -191,11 +202,7 @@ export function RouteWorkspace() {
     } finally {
       setIsLoading(false);
     }
-  }, [origin, destination, selectedTimeIndex]);
-
-  useEffect(() => {
-    void fetchRoutes();
-  }, [fetchRoutes]);
+  }, [originPoint, destPoint, selectedTimeIndex]);
 
   // Selected route object
   const activeRoute: RouteResponse | undefined =
@@ -213,46 +220,49 @@ export function RouteWorkspace() {
     (s) => s.segment_id === selectedSegmentId,
   );
 
-  // Map representation adapters
-  const mapRoutes: MapRoute[] = (comparison?.routes || []).map((r, i) => {
-    const ctx = contexts[r.id];
-    const bandInfo = formatContextBand(ctx?.route_context_band);
-    return {
-      id: r.id,
-      label: `Option 0${i + 1}`,
-      coordinates: r.geometry as [number, number][],
-      context: bandInfo.kind,
-    };
-  });
+  // Map representation — use REAL backend geometry, never fabricated coordinates
+  const mapRoutes: MapRoute[] = useMemo(
+    () =>
+      (comparison?.routes || []).map((r, i) => {
+        const ctx = contexts[r.id];
+        const bandInfo = formatContextBand(ctx?.route_context_band);
+        return {
+          id: r.id,
+          label: `Option 0${i + 1}`,
+          coordinates: r.geometry as [number, number][],
+          context: bandInfo.kind,
+        };
+      }),
+    [comparison, contexts],
+  );
 
-  const mapHelpPoints: MapHelpPoint[] = helpPoints.map((hp, idx) => {
-    let cat: MapHelpPoint["category"] = "support";
-    if (hp.category.includes("POLICE")) cat = "police";
-    else if (hp.category.includes("HOSPITAL")) cat = "hospital";
-    else if (hp.category.includes("PHARMACY")) cat = "pharmacy";
-    else if (hp.category.includes("TRANSIT")) cat = "transport";
+  // Help points — use REAL coordinates from backend PostGIS data
+  const mapHelpPoints: MapHelpPoint[] = useMemo(
+    () =>
+      helpPoints.flatMap((hp) => {
+        if (!Number.isFinite(hp.longitude) || !Number.isFinite(hp.latitude))
+          return [];
+        let cat: MapHelpPoint["category"] = "support";
+        if (hp.category.includes("POLICE")) cat = "police";
+        else if (hp.category.includes("HOSPITAL")) cat = "hospital";
+        else if (hp.category.includes("PHARMACY")) cat = "pharmacy";
+        else if (hp.category.includes("TRANSIT")) cat = "transport";
 
-    // Place within pilot bounding box for map display
-    const offsetLng = (idx % 3) * 0.003;
-    const offsetLat = Math.floor(idx / 3) * 0.002;
-    const coord: [number, number] = [
-      Math.min(72.845, Math.max(72.825, origin.longitude + offsetLng)),
-      Math.min(19.06, Math.max(19.048, origin.latitude + offsetLat)),
-    ];
-
-    return {
-      id: hp.reference,
-      name:
-        hp.sponsor_disclosure ||
-        `${hp.category.replace(/_/g, " ")} (${hp.reference.slice(0, 8)})`,
-      category: cat,
-      coordinate: coord,
-      freshness:
-        hp.verification_status === "VERIFIED"
-          ? "Verified"
-          : hp.verification_status,
-    };
-  });
+        return [
+          {
+            id: hp.reference,
+            name: hp.sponsor_disclosure || hp.category.replace(/_/g, " "),
+            category: cat,
+            coordinate: [hp.longitude, hp.latitude] as [number, number],
+            freshness:
+              hp.verification_status === "VERIFIED"
+                ? "Verified"
+                : hp.verification_status,
+          },
+        ];
+      }),
+    [helpPoints],
+  );
 
   const selectedHelpPoint = helpPoints.find(
     (hp) => hp.reference === selectedHelpPointRef,
@@ -321,11 +331,11 @@ export function RouteWorkspace() {
         </div>
         <button
           onClick={() => void fetchRoutes()}
-          disabled={isLoading}
+          disabled={isLoading || !originPoint || !destPoint}
           className="flex items-center gap-2 bg-[#16756c] px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-[#075b53] disabled:opacity-50"
         >
           <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
-          {isLoading ? "Evaluating..." : "Refresh context"}
+          {isLoading ? "Evaluating..." : "Evaluate route context"}
         </button>
       </div>
 
@@ -350,55 +360,81 @@ export function RouteWorkspace() {
       {/* ── Input & Map Layout ── */}
       <section className="grid gap-6 lg:grid-cols-[.9fr_1.1fr]">
         {/* Left: Origin/Destination & Time Lens */}
-        <div className="border border-[#d8ddd7] bg-[#fffefb] p-5 shadow-sm">
-          <div>
-            <label
-              htmlFor={originInputId}
-              className="block text-xs font-semibold uppercase tracking-wider text-[#62706a]"
-            >
-              From (Origin)
-            </label>
-            <div className="mt-1.5 flex items-center border-b border-[#d8ddd7] py-2 text-sm">
-              <MapPin className="mr-2 h-4 w-4 shrink-0 text-[#16756c]" />
-              <input
-                id={originInputId}
-                type="text"
-                value={originLabel}
-                onChange={(e) => setOriginLabel(e.target.value)}
-                className="w-full bg-transparent text-sm font-medium outline-none"
-              />
-            </div>
-            <p className="mt-1 text-[11px] text-[#62706a]">
-              Pilot area coordinates: {origin.latitude.toFixed(4)}°N,{" "}
-              {origin.longitude.toFixed(4)}°E
-            </p>
-          </div>
+        <div className="border border-[#d8ddd7] bg-[#fffefb] p-5 shadow-sm space-y-4">
+          {/* Origin search */}
+          <PlaceSearch
+            label="From (Origin)"
+            placeholder="Search place, landmark, or street..."
+            initialValue={originText}
+            pinColor="teal"
+            showCurrentLocationOption={true}
+            onUseCurrentLocation={() => {
+              if (!navigator.geolocation) {
+                setError("Geolocation not supported by your browser.");
+                return;
+              }
+              navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                  const pt: Point = {
+                    latitude: pos.coords.latitude,
+                    longitude: pos.coords.longitude,
+                  };
+                  setOriginPoint(pt);
+                  setOriginText(
+                    `${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`,
+                  );
+                  clearRouteResults();
+                },
+                (err) => {
+                  setError(
+                    `Location access denied (${err.message}). Please search for a starting place instead.`,
+                  );
+                },
+                { enableHighAccuracy: true, timeout: 10000 },
+              );
+            }}
+            onSelect={(place) => {
+              setOriginText(place.name);
+              setOriginPoint(place.point);
+              clearRouteResults();
+              setError(null);
+            }}
+            onQueryChange={() => {
+              setOriginPoint(null);
+              clearRouteResults();
+            }}
+            onClear={() => {
+              setOriginText("");
+              setOriginPoint(null);
+              clearRouteResults();
+            }}
+          />
 
-          <div className="mt-5">
-            <label
-              htmlFor={destInputId}
-              className="block text-xs font-semibold uppercase tracking-wider text-[#62706a]"
-            >
-              To (Destination)
-            </label>
-            <div className="mt-1.5 flex items-center border-b border-[#d8ddd7] py-2 text-sm">
-              <MapPin className="mr-2 h-4 w-4 shrink-0 text-[#b6433d]" />
-              <input
-                id={destInputId}
-                type="text"
-                value={destLabel}
-                onChange={(e) => setDestLabel(e.target.value)}
-                className="w-full bg-transparent text-sm font-medium outline-none"
-              />
-            </div>
-            <p className="mt-1 text-[11px] text-[#62706a]">
-              Pilot area coordinates: {destination.latitude.toFixed(4)}°N,{" "}
-              {destination.longitude.toFixed(4)}°E
-            </p>
-          </div>
+          {/* Destination search */}
+          <PlaceSearch
+            label="To (Destination)"
+            placeholder="Search destination, landmark, or street..."
+            initialValue={destText}
+            pinColor="coral"
+            onSelect={(place) => {
+              setDestText(place.name);
+              setDestPoint(place.point);
+              clearRouteResults();
+              setError(null);
+            }}
+            onQueryChange={() => {
+              setDestPoint(null);
+              clearRouteResults();
+            }}
+            onClear={() => {
+              setDestText("");
+              setDestPoint(null);
+              clearRouteResults();
+            }}
+          />
 
           {/* Time Lens */}
-          <div className="mt-6 border-t border-[#d8ddd7] pt-5">
+          <div className="border-t border-[#d8ddd7] pt-5">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold uppercase tracking-wider text-[#62706a]">
                 Time Lens · Departure
@@ -431,26 +467,55 @@ export function RouteWorkspace() {
             </p>
           </div>
 
-          {/* Start Journey Action */}
-          <div className="mt-6 border-t border-[#d8ddd7] pt-5">
-            {tripError && (
-              <p className="mb-3 text-xs text-[#b6433d]">{tripError}</p>
-            )}
+          {/* Evaluate CTA */}
+          <div className="border-t border-[#d8ddd7] pt-5">
             <button
-              onClick={() => void handleStartTrip()}
-              disabled={!activeRoute || isStartingTrip}
+              onClick={() => void fetchRoutes()}
+              disabled={!originPoint || !destPoint || isLoading}
               className="flex w-full items-center justify-center gap-2 bg-[#16756c] py-3 text-sm font-semibold text-white transition hover:bg-[#075b53] disabled:opacity-50"
             >
-              {isStartingTrip
-                ? "Starting active journey..."
-                : "Start journey with this route"}
-              <ArrowRight className="h-4 w-4" />
+              {isLoading ? (
+                <>
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                  Evaluating corridor context...
+                </>
+              ) : (
+                <>
+                  Compare route context
+                  <ArrowRight className="h-4 w-4" />
+                </>
+              )}
             </button>
-            <p className="mt-2 text-center text-[11px] text-[#62706a]">
-              Active-trip location sharing is off by default and requires
-              separate consent.
-            </p>
+            {(!originPoint || !destPoint) && (
+              <p className="mt-2 text-center text-[11px] text-[#62706a]">
+                Search and select both a starting point and destination above to
+                enable route comparison.
+              </p>
+            )}
           </div>
+
+          {/* Start Journey Action (shown only after route is found) */}
+          {activeRoute && (
+            <div className="border-t border-[#d8ddd7] pt-5">
+              {tripError && (
+                <p className="mb-3 text-xs text-[#b6433d]">{tripError}</p>
+              )}
+              <button
+                onClick={() => void handleStartTrip()}
+                disabled={!activeRoute || isStartingTrip}
+                className="flex w-full items-center justify-center gap-2 bg-[#16756c] py-3 text-sm font-semibold text-white transition hover:bg-[#075b53] disabled:opacity-50"
+              >
+                {isStartingTrip
+                  ? "Starting active journey..."
+                  : "Start journey with this route"}
+                <ArrowRight className="h-4 w-4" />
+              </button>
+              <p className="mt-2 text-center text-[11px] text-[#62706a]">
+                Active-trip location sharing is off by default and requires
+                separate consent.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Right: Map & Alternatives */}
@@ -460,11 +525,18 @@ export function RouteWorkspace() {
             routes={mapRoutes}
             selectedRoute={selectedRouteId}
             helpPoints={mapHelpPoints}
+            originPoint={
+              originPoint ? [originPoint.longitude, originPoint.latitude] : null
+            }
+            destinationPoint={
+              destPoint ? [destPoint.longitude, destPoint.latitude] : null
+            }
             onSelectRoute={(id) => {
               setSelectedRouteId(id);
               setSelectedSegmentId(null);
             }}
             onSelectHelp={(ref) => setSelectedHelpPointRef(ref)}
+            selectedHelpPoint={selectedHelpPointRef}
           />
 
           {selectedHelpPointRef && selectedHelpPoint && (
@@ -491,7 +563,7 @@ export function RouteWorkspace() {
           <div className="mt-4 grid gap-2 sm:grid-cols-3">
             {isLoading ? (
               <div className="col-span-3 border border-dashed border-[#d8ddd7] p-4 text-center text-xs text-[#62706a]">
-                Querying Valhalla and evaluating Safety Context...
+                Evaluating route context...
               </div>
             ) : comparison?.routes && comparison.routes.length > 0 ? (
               comparison.routes.map((r, i) => {
@@ -535,9 +607,14 @@ export function RouteWorkspace() {
                   </button>
                 );
               })
-            ) : (
+            ) : comparison ? (
               <div className="col-span-3 border border-[#d8ddd7] bg-[#fffefb] p-4 text-center text-xs text-[#62706a]">
                 No routes returned for this corridor.
+              </div>
+            ) : (
+              <div className="col-span-3 border border-dashed border-[#d8ddd7] p-4 text-center text-xs text-[#62706a]">
+                Select origin and destination, then evaluate to see route
+                options.
               </div>
             )}
           </div>
@@ -692,19 +769,26 @@ export function RouteWorkspace() {
             </p>
 
             <div className="mt-4 space-y-3">
-              {helpPoints.slice(0, 3).map((hp) => (
-                <div
-                  key={hp.reference}
-                  className="border-b border-[#d8ddd7] pb-2 text-xs"
-                >
-                  <p className="font-semibold text-[#14231d]">
-                    {hp.category.replace(/_/g, " ")}
-                  </p>
-                  <p className="text-[11px] text-[#62706a]">
-                    Status: {hp.operating_status} · {hp.verification_status}
-                  </p>
-                </div>
-              ))}
+              {helpPoints.length === 0 ? (
+                <p className="text-xs text-[#62706a]">
+                  No help points found near this corridor. Try expanding the
+                  search radius on the Help page.
+                </p>
+              ) : (
+                helpPoints.slice(0, 3).map((hp) => (
+                  <div
+                    key={hp.reference}
+                    className="border-b border-[#d8ddd7] pb-2 text-xs"
+                  >
+                    <p className="font-semibold text-[#14231d]">
+                      {hp.category.replace(/_/g, " ")}
+                    </p>
+                    <p className="text-[11px] text-[#62706a]">
+                      Status: {hp.operating_status} · {hp.verification_status}
+                    </p>
+                  </div>
+                ))
+              )}
             </div>
 
             <button

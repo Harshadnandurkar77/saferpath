@@ -277,7 +277,7 @@ def test_idempotency_is_race_safe_and_does_not_duplicate_database_state():
     payload = RouteComparisonRequest.model_validate({"origin": {"longitude": 72.8373, "latitude": 19.0269}, "destination": {"longitude": 72.8433, "latitude": 19.018}, "timezone": "Asia/Kolkata", "requested_local_time": "2026-09-19T18:00:00", "time_mode": "departure", "idempotency_key": key, "session_id": "race-session"})
     def create():
         with SessionLocal() as session:
-            return RouteComparisonService().create(session, payload).reused
+            return RouteComparisonService(FixtureRoutingProvider()).create(session, payload).reused
     try:
         with ThreadPoolExecutor(max_workers=2) as executor:
             assert sorted(executor.map(lambda _: create(), range(2))) == [False, True]
@@ -305,7 +305,7 @@ def test_persistence_failure_rolls_back_all_route_records(monkeypatch):
             return original_flush(*args, **kwargs)
         monkeypatch.setattr(session, "flush", fail_after_routes)
         with pytest.raises(RoutingFailure, match="persistence"):
-            RouteComparisonService().create(session, payload)
+            RouteComparisonService(FixtureRoutingProvider()).create(session, payload)
         monkeypatch.setattr(session, "flush", original_flush)
         assert session.scalar(select(func.count()).select_from(RouteRequest).where(RouteRequest.idempotency_key == key)) == 0
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Building2,
   Info,
@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import { getNearbyHelpPoints } from "../../api/helpPoints";
 import type { HelpPointResponse } from "../../api/types";
+import { SaferPathMap } from "../map/SaferPathMap";
+import type { MapHelpPoint } from "../map/mapTypes";
 
 const CATEGORY_CHIPS = [
   { id: "ALL", label: "All Assistance" },
@@ -33,6 +35,7 @@ export function HelpNearbyWorkspace() {
     longitude: number;
     label: string;
   } | null>(null);
+  const [selectedHelpPointRef, setSelectedHelpPointRef] = useState<string | null>(null);
 
   const handleUseCurrentLocation = () => {
     if (!navigator.geolocation) {
@@ -42,6 +45,7 @@ export function HelpNearbyWorkspace() {
     setError(null);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
+        setError(null);
         setCoords({
           latitude: pos.coords.latitude,
           longitude: pos.coords.longitude,
@@ -50,7 +54,9 @@ export function HelpNearbyWorkspace() {
       },
       (err) => {
         setError(
-          `Location access was not granted (${err.message}). You can explicitly choose the pilot corridor below.`,
+          err.code === GeolocationPositionError.PERMISSION_DENIED
+            ? "Unable to access your location. Allow location access or choose the pilot corridor."
+            : "Unable to determine your location. Please try again or choose the pilot corridor.",
         );
       },
     );
@@ -77,6 +83,7 @@ export function HelpNearbyWorkspace() {
         verified_only: verifiedOnly,
       });
       setHelpPoints(data);
+      setSelectedHelpPointRef(null);
     } catch (err) {
       setError(
         err instanceof Error
@@ -102,6 +109,49 @@ export function HelpNearbyWorkspace() {
     if (cat.includes("TRANSIT")) return Train;
     return LifeBuoy;
   };
+
+  const formatAccessibility = (value: unknown) => {
+    if (!value) return null;
+    if (typeof value === "string") return value;
+    if (typeof value !== "object") return null;
+    return Object.entries(value as Record<string, unknown>)
+      .filter(([, enabled]) => Boolean(enabled))
+      .map(([key]) => key.replace(/_/g, " "))
+      .join(", ");
+  };
+
+  const mapHelpPoints: MapHelpPoint[] = useMemo(
+    () =>
+      helpPoints.flatMap((point) => {
+        if (!Number.isFinite(point.longitude) || !Number.isFinite(point.latitude)) {
+          return [];
+        }
+        let category: MapHelpPoint["category"] = "support";
+        if (point.category.includes("POLICE")) category = "police";
+        else if (point.category.includes("HOSPITAL")) category = "hospital";
+        else if (point.category.includes("PHARMACY")) category = "pharmacy";
+        else if (point.category.includes("TRANSIT")) category = "transport";
+        return [{
+          id: point.reference,
+          name: point.sponsor_disclosure || point.category.replace(/_/g, " "),
+          category,
+          coordinate: [point.longitude, point.latitude] as [number, number],
+          freshness: point.verification_status,
+        }];
+      }),
+    [helpPoints],
+  );
+
+  const selectedPoint = helpPoints.find(
+    (point) => point.reference === selectedHelpPointRef,
+  );
+
+  const distanceToSelected = selectedPoint && coords
+    ? Math.round(Math.hypot(
+        (selectedPoint.longitude - coords.longitude) * 111320,
+        (selectedPoint.latitude - coords.latitude) * 111320,
+      ))
+    : null;
 
   return (
     <div>
@@ -185,6 +235,53 @@ export function HelpNearbyWorkspace() {
             Call 112 (India)
           </a>
         </div>
+      </div>
+
+      <div className="mb-6">
+        <SaferPathMap
+          className="h-80 w-full"
+          routes={[]}
+          selectedRoute=""
+          helpPoints={mapHelpPoints}
+          currentLocation={
+            coords ? [coords.longitude, coords.latitude] : null
+          }
+          onSelectHelp={setSelectedHelpPointRef}
+          selectedHelpPoint={selectedHelpPointRef}
+        />
+        {selectedPoint && (
+          <div className="mt-2 border border-[#d8ddd7] bg-[#fffefb] p-4 text-xs text-[#53615a]">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="font-semibold text-[#14231d]">
+                  {selectedPoint.sponsor_disclosure || selectedPoint.category.replace(/_/g, " ")}
+                </p>
+                <p className="mt-1">
+                  {selectedPoint.category.replace(/_/g, " ")} · {selectedPoint.verification_status}
+                  {distanceToSelected !== null && ` · ${distanceToSelected} m away`}
+                </p>
+                <p className="mt-1">Opening status: {selectedPoint.operating_status}</p>
+              </div>
+              <div className="flex gap-3">
+                {selectedPoint.contact && (
+                  <a className="font-semibold text-[#075b53] hover:underline" href={`tel:${selectedPoint.contact}`}>
+                    Call
+                  </a>
+                )}
+                {coords && (
+                  <a
+                    className="font-semibold text-[#075b53] hover:underline"
+                    href={`https://www.google.com/maps/dir/?api=1&destination=${selectedPoint.latitude},${selectedPoint.longitude}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Directions
+                  </a>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Filter Controls ── */}
@@ -272,12 +369,12 @@ export function HelpNearbyWorkspace() {
                     </span>{" "}
                     {point.verification_status}
                   </p>
-                  {point.accessibility && (
+                  {formatAccessibility(point.accessibility) && (
                     <p>
                       <span className="font-semibold text-[#14231d]">
                         Accessibility:
                       </span>{" "}
-                      {point.accessibility}
+                      {formatAccessibility(point.accessibility)}
                     </p>
                   )}
                   {point.sponsor_disclosure && (

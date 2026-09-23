@@ -81,12 +81,15 @@ export function ActiveTripTracker({
   const arrivalCountRef = useRef(0);
 
   const handleArrival = useCallback(async () => {
-    setStatus("ARRIVED");
     try {
       await stopTrip(tripId);
     } catch {
-      // Backend status recorded
+      setGeoError(
+        "Destination reached, but we could not confirm trip completion with the server. Tracking remains active while we retry.",
+      );
+      return;
     }
+    setStatus("ARRIVED");
     setTimeout(() => {
       setStatus("STOPPED");
       onTripCompleted();
@@ -307,9 +310,7 @@ export function ActiveTripTracker({
           </span>
         </div>
         <span className="rounded-full bg-[#e0f2fe] px-2.5 py-0.5 text-xs font-semibold text-[#0369a1]">
-          {currentCoords
-            ? `Live GPS (${currentCoords[1].toFixed(3)}, ${currentCoords[0].toFixed(3)})`
-            : "Live GPS"}
+          {currentCoords ? "Live GPS" : "Waiting for GPS"}
         </span>
       </div>
 
@@ -484,15 +485,15 @@ export function ActiveTripTracker({
             <ShieldAlert className="h-5 w-5 text-[#b6433d] shrink-0 mt-0.5" />
             <div>
               <span className="rounded bg-[#b6433d] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
-                Emergency Escalation Dispatched
+                Escalation Recorded
               </span>
               <h4 className="mt-1.5 font-serif text-sm font-bold text-[#b6433d]">
                 We detected a route deviation.
               </h4>
               <p className="mt-1 text-xs text-[#70211d]">
-                Alert notifications have been dispatched to your trusted
-                contacts circle. Live tracking coordinates and deviation alerts
-                are now visible to your emergency contacts.
+                Your trusted-contact escalation has been recorded. Delivery is
+                shown as confirmed only when a configured notification provider
+                reports it.
               </p>
             </div>
           </div>
@@ -500,16 +501,18 @@ export function ActiveTripTracker({
           <div className="rounded-lg bg-white p-3 border border-[#b6433d]/20 space-y-2">
             <div className="flex items-center justify-between text-xs">
               <span className="font-semibold text-[#14231d]">
-                Trusted Contacts Alerted:
+                Trusted-contact alert:
               </span>
-              <span className="font-bold text-[#b6433d]">✓ Dispatched</span>
+              <span className="font-bold text-[#b6433d]">
+                Awaiting delivery confirmation
+              </span>
             </div>
             <div className="flex items-center justify-between text-xs">
               <span className="font-semibold text-[#14231d]">
-                Terminal / Log Audit:
+                Audit event:
               </span>
               <span className="font-mono text-[11px] text-[#53615a]">
-                [DEV ALERT] Printed
+                Escalation recorded
               </span>
             </div>
           </div>

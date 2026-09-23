@@ -4,12 +4,14 @@ export const apiBaseUrl = (import.meta.env.VITE_API_URL || "/v1").replace(
   "",
 );
 let token: string | null = sessionStorage.getItem("saferpath_session");
+/** The only frontend source of truth for an authenticated backend session. */
+export function getSessionToken(): string | null {
+  token = sessionStorage.getItem("saferpath_session");
+  return token;
+}
 export const session = {
   /** Resolve at request time so login, restored sessions, and HMR cannot use a stale token. */
-  get: () => {
-    token = sessionStorage.getItem("saferpath_session");
-    return token;
-  },
+  get: getSessionToken,
   set: (value: string) => {
     token = value;
     sessionStorage.setItem("saferpath_session", value);
@@ -39,6 +41,14 @@ export async function api<T>(
   const timer = window.setTimeout(() => controller.abort(), 15000);
   try {
     const authorizationToken = authenticated ? session.get() : null;
+    if (import.meta.env.DEV) {
+      console.info("[AUTH DEBUG]", {
+        method: init.method || "GET",
+        path,
+        authenticated,
+        token_present: Boolean(authorizationToken),
+      });
+    }
     const response = await fetch(`${apiBaseUrl}${path}`, {
       ...init,
       signal: controller.signal,
@@ -75,8 +85,15 @@ export async function api<T>(
                   : response.status === 429
                     ? "Please wait before trying again."
                     : response.status >= 500
-                      ? "The service is temporarily unavailable."
+                    ? "The service is temporarily unavailable."
                       : "We could not complete that request.";
+      // All backend 401 responses for authenticated requests mean the current
+      // bearer session was rejected. Notify AuthContext once; it owns UI state
+      // and Guard performs the redirect without a client-level redirect loop.
+      if (response.status === 401 && authenticated) {
+        session.clear();
+        window.dispatchEvent(new Event("saferpath:session-invalid"));
+      }
       throw new ApiError(response.status, message || fallback, code);
     }
     return response.status === 204

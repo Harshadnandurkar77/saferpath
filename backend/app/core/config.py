@@ -22,9 +22,10 @@ class Settings(BaseSettings):
     max_request_body_bytes: int = 1_048_576
     routing_geometry_max_points: int = 1_000
     routing_retention_days: int = 7
-    routing_provider: str = "fixture"
+    routing_provider: str = "valhalla"
     routing_osrm_url: str = "https://router.project-osrm.org"
     routing_osrm_profile: str = "driving"
+    routing_valhalla_url: str = "https://valhalla1.openstreetmap.de/route"
     report_retention_days: int = 30
     report_stale_hours: int = 24
     report_cluster_minutes: int = 30
@@ -70,6 +71,7 @@ class Settings(BaseSettings):
     analytics_minimum_count: int = 3
     auth_secret: str = "development-only-auth-secret-change-me"
     auth_code_ttl_minutes: int = 10
+    maptiler_api_key: str = ""
     auth_code_max_attempts: int = 5
     auth_code_resend_cooldown_seconds: int = 60
     session_ttl_hours: int = 24
@@ -103,6 +105,8 @@ class Settings(BaseSettings):
             raise ValueError("production cannot enable debug or demo mode")
         if self.weather_provider == "fixture":
             raise ValueError("production cannot use fixture weather")
+        if self.routing_provider.lower() == "fixture":
+            raise ValueError("production cannot use fixture routing")
         if not self.cors_origins or any(not item.startswith("https://") for item in self.cors_origins):
             raise ValueError("production requires explicit HTTPS CORS origins")
         if any(host in {"*", "localhost", "127.0.0.1"} for host in self.trusted_hosts):

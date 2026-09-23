@@ -8,6 +8,7 @@ interface PlaceSearchProps {
   placeholder?: string;
   initialValue?: string;
   onSelect: (place: { name: string; point: Point }) => void;
+  onQueryChange?: (query: string) => void;
   onClear?: () => void;
   onUseCurrentLocation?: () => void;
   showCurrentLocationOption?: boolean;
@@ -21,6 +22,7 @@ export function PlaceSearch({
   placeholder = "Search a place, landmark, or street...",
   initialValue = "",
   onSelect,
+  onQueryChange,
   onClear,
   onUseCurrentLocation,
   showCurrentLocationOption = false,
@@ -88,6 +90,7 @@ export function PlaceSearch({
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setQuery(val);
+    onQueryChange?.(val);
     triggerSearch(val);
   };
 

@@ -19,6 +19,7 @@ from app.modules.routing.schemas import (
     RouteResponse,
     SegmentResponse,
 )
+from app.modules.routing.valhalla import ValhallaRoutingProvider
 
 
 def _wkt(coordinates: tuple[tuple[float, float], ...]) -> str:
@@ -31,11 +32,12 @@ def _point_wkt(longitude: float, latitude: float) -> str:
 
 class RouteComparisonService:
     def __init__(self, provider: RoutingProvider | None = None) -> None:
-        self.provider = provider or FixtureRoutingProvider()
         if provider is not None:
             self.provider = provider
         elif get_settings().routing_provider.lower() == "fixture":
             self.provider = FixtureRoutingProvider()
+        elif get_settings().routing_provider.lower() == "valhalla":
+            self.provider = ValhallaRoutingProvider()
         else:
             self.provider = OsrmRoutingProvider()
 

@@ -31,10 +31,37 @@ def test_geocoding_success_mocked(client: TestClient):
             "type": "station",
         },
     ]
+    mock_maptiler_data = {
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {
+                    "place_name": "Shivaji Park, Dadar West, Mumbai, Maharashtra, 400028, India",
+                    "kind": "park"
+                },
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [72.8373, 19.0269]
+                }
+            },
+            {
+                "type": "Feature",
+                "properties": {
+                    "place_name": "Bandra Station, Bandra West, Mumbai, Maharashtra, India",
+                    "kind": "station"
+                },
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [72.8402, 19.0544]
+                }
+            }
+        ]
+    }
 
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_resp.json.return_value = mock_nominatim_data
+    mock_resp.json.return_value = mock_maptiler_data
     mock_resp.raise_for_status = lambda: None
 
     with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:

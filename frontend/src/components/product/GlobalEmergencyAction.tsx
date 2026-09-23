@@ -14,6 +14,7 @@ export function GlobalEmergencyAction() {
   const holdFrame = useRef<number | null>(null);
   const countdownTimer = useRef<number | null>(null);
   const cooldownUntil = useRef(0);
+  const actionLock = useRef(false);
 
   useEffect(() => () => { if (holdFrame.current) cancelAnimationFrame(holdFrame.current); if (countdownTimer.current) window.clearInterval(countdownTimer.current); }, []);
 
@@ -50,17 +51,22 @@ export function GlobalEmergencyAction() {
   const cancelCountdown = () => { if (countdownTimer.current) window.clearInterval(countdownTimer.current); countdownTimer.current = null; setStage("idle"); };
 
   const initiate = async () => {
-    if (Date.now() < cooldownUntil.current) return;
+    if (actionLock.current || Date.now() < cooldownUntil.current) return;
+    actionLock.current = true;
     cooldownUntil.current = Date.now() + 30_000;
     const tripId = sessionStorage.getItem("saferpath-active-trip");
     try {
       if (tripId) {
         const handoff = await createEmergencyHandoff({ trip_id: tripId, method: "OFFICIAL_CALL", explicit_user_action: true, consent_version: "1.0", consent_source: "global_emergency_hold" });
         await submitEmergencyHandoffAction(handoff.handoff_id, "CALL_INITIATED");
-        console.warn("[SaferPath Emergency] Official 112 handoff initiated", { handoffId: handoff.handoff_id, tripId });
+        if (import.meta.env.DEV) {
+          console.info("[DEV EMERGENCY] Emergency flow initiated");
+          console.info("[DEV EMERGENCY] Official 112 handoff initiated");
+          console.info("[DEV EMERGENCY] Trusted-contact escalation initiated (DEV/DEMO notifications only)");
+        }
         setMessage("Emergency handoff initiated. The official 112 call action was opened. Trusted-contact alerts are only shown as sent when a notification provider confirms delivery.");
       } else {
-        console.warn("[SaferPath Emergency] 112 call opened without an active trip; no trusted-contact alert was sent.");
+        if (import.meta.env.DEV) console.info("[DEV EMERGENCY] Emergency flow initiated; no active trip, so no trusted-contact escalation was created.");
         setMessage("Emergency handoff initiated. No active trip was available, so trusted contacts were not alerted.");
       }
       setStage("complete");
@@ -69,6 +75,8 @@ export function GlobalEmergencyAction() {
       console.error("[SaferPath Emergency] Handoff failed", error);
       setMessage(error instanceof Error ? error.message : "Emergency handoff could not be recorded. You can still call 112.");
       setStage("error");
+    } finally {
+      actionLock.current = false;
     }
   };
 

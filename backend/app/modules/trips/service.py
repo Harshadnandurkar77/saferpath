@@ -49,6 +49,7 @@ from app.modules.trips.schemas import (
     TripResponse,
     TrustedContactCreateRequest,
     TrustedContactResponse,
+    TrustedContactVerificationCodeRequest,
     TrustedContactVerifyRequest,
 )
 
@@ -251,6 +252,10 @@ class TripService:
             raise TripFailure("idempotency_conflict") from None
         event_type = "EMERGENCY_HANDOFF_UNAVAILABLE" if status == "UNAVAILABLE" else "EMERGENCY_HANDOFF_INITIATED"
         self.internal_event(db, trip, event_type, now, {"handoff": status, "method": payload.method}, f"handoff:{handoff.id}")
+        if get_settings().app_env.lower() not in {"production", "release"}:
+            print("[DEV EMERGENCY] Emergency flow initiated", flush=True)
+            if payload.method in {"OFFICIAL_CALL", "OFFICIAL_DEEP_LINK"}:
+                print("[DEV EMERGENCY] Official 112 handoff initiated", flush=True)
         job_key = f"{handoff.id}:emergency_handoff_expiry"
         db.add(JobRun(job_type="emergency_handoff_expiry", idempotency_key=job_key, status="pending"))
         return self._handoff_summary(handoff)
@@ -275,7 +280,16 @@ class TripService:
         if target == "CANCELLED":
             handoff.completed_at = datetime.now(UTC)
         event_type = {"CALL_INITIATED": "EMERGENCY_CALL_INITIATED", "CALL_OPENED": "EMERGENCY_CALL_OPENED", "CANCELLED": "EMERGENCY_HANDOFF_CANCELLED"}[target]
+        prior_action = db.scalar(
+            select(TripEvent).where(
+                TripEvent.trip_id == trip.id,
+                TripEvent.idempotency_key == f"handoff-action:{handoff.id}:{payload.idempotency_key}",
+            )
+        )
         self.internal_event(db, trip, event_type, datetime.now(UTC), {"handoff_id": handoff.public_reference, "status": target}, f"handoff-action:{handoff.id}:{payload.idempotency_key}")
+        if target == "CALL_INITIATED" and prior_action is None and get_settings().app_env.lower() not in {"production", "release"}:
+            print("[DEV EMERGENCY] Official 112 handoff initiated", flush=True)
+            print("[DEV EMERGENCY] Trusted-contact escalation initiated (DEV/DEMO notification mechanism)", flush=True)
         return self._handoff_summary(handoff)
 
     @staticmethod
@@ -315,7 +329,7 @@ class TripService:
         if (
             route.normalized_state != "normalized"
             or route.duration_seconds <= 0
-            or route.provider != "fixture"
+            or not route.provider
         ):
             raise TripFailure("invalid_route")
         if route.route_request.travel_mode != payload.travel_mode:
@@ -860,24 +874,10 @@ class TripService:
                     db.add(dispatch)
                     db.flush()
 
-            # Output clearly in the terminal during development
             if get_settings().app_env.lower() not in {"production", "release"}:
-                contact_names = (
-                    ", ".join(f"{c.display_name} ({c.contact_reference})" for c in contacts)
-                    if contacts
-                    else "All designated emergency contacts"
-                )
-                print(
-                    f"\n[DEV ALERT] 🚨 TRUSTED CONTACT ALERT DISPATCHED\n"
-                    f"  Trip ID: {trip.public_reference}\n"
-                    f"  Event: Route deviation confirmed UNINTENDED by traveller\n"
-                    f"  Alerted Contacts: {contact_names}\n"
-                    f"  Action: Escalation to emergency contacts & safety circle initiated\n",
-                    f"[DEV ALERT] Trusted contact alert dispatched: "
-                    f"trip={trip.public_reference} deviation={deviation.public_reference} "
-                    f"contacts={contact_names}",
-                    flush=True,
-                )
+                print("[DEV ALERT] Trusted-contact escalation initiated", flush=True)
+                print("[DEV ALERT] Reason: Unintended route deviation", flush=True)
+                print(f"[DEV ALERT] Trusted contacts notified: {len(contacts)} (DEV/DEMO)", flush=True)
 
         elif payload.response == "UNSURE":
             deviation.status = "USER_UNCERTAIN"
@@ -1036,6 +1036,7 @@ class TripService:
             )
             existing.display_name = payload.display_name
             existing.relationship_label = payload.relationship_label
+            existing.phone_number = payload.phone_number
             existing.revoked_at = None
             db.flush()
             self.trusted_contact_provider.send(existing.contact_reference, token)
@@ -1047,6 +1048,7 @@ class TripService:
             public_reference=f"tc_{secrets.token_urlsafe(16)}",
             owner_session_id=payload.session_id,
             contact_reference=payload.contact_reference,
+            phone_number=payload.phone_number,
             display_name=payload.display_name,
             relationship_label=payload.relationship_label,
             verification_status="PENDING",
@@ -1062,6 +1064,33 @@ class TripService:
         except IntegrityError:
             raise TripFailure("contact_conflict") from None
 
+        self.trusted_contact_provider.send(contact.contact_reference, token)
+        return self._contact_response(contact)
+
+    def generate_contact_verification_code(
+        self, db: Session, contact_id: str, payload: TrustedContactVerificationCodeRequest
+    ) -> TrustedContactResponse:
+        contact = db.scalar(
+            select(TrustedContact).where(TrustedContact.public_reference == contact_id)
+        )
+        if not contact:
+            raise TripFailure("contact_not_found")
+        if not secrets.compare_digest(contact.owner_session_id, payload.session_id):
+            raise TripFailure("access_denied")
+        if contact.verification_status == "REVOKED":
+            raise TripFailure("contact_revoked")
+        if contact.verification_status == "VERIFIED":
+            raise TripFailure("contact_already_verified")
+        if get_settings().app_env.lower() in {"production", "release"}:
+            raise TripFailure("development_only")
+
+        token = self.trusted_contact_provider.generate()
+        contact.verification_status = "PENDING"
+        contact.verification_token_hash = hash_token(token)
+        contact.verification_expires_at = datetime.now(UTC) + timedelta(
+            minutes=get_settings().trusted_contact_verification_timeout_minutes
+        )
+        db.flush()
         self.trusted_contact_provider.send(contact.contact_reference, token)
         return self._contact_response(contact)
 
@@ -1338,6 +1367,7 @@ class TripService:
         return TrustedContactResponse(
             contact_id=contact.public_reference,
             contact_reference=contact.contact_reference,
+            phone_number=contact.phone_number,
             display_name=contact.display_name,
             relationship_label=contact.relationship_label,
             verification_status=contact.verification_status,

@@ -64,6 +64,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void refresh();
   }, []);
+  useEffect(() => {
+    const handleInvalidSession = () => clear();
+    window.addEventListener("saferpath:session-invalid", handleInvalidSession);
+    return () => window.removeEventListener("saferpath:session-invalid", handleInvalidSession);
+  }, []);
   const verify = async (email: string, code: string) => {
     const result = await verifyCode(email, code);
     setAccount(result.account);

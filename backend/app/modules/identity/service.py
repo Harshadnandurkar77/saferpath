@@ -47,7 +47,12 @@ class AuthenticationService:
         now = datetime.now(UTC)
         email_key = protected(email.strip().lower())
         recent = db.scalar(select(AuthenticationCode).where(AuthenticationCode.email_key == email_key).order_by(AuthenticationCode.created_at.desc()))
-        if recent and recent.created_at and recent.created_at > now - timedelta(seconds=get_settings().auth_code_resend_cooldown_seconds):
+        if (
+            recent
+            and recent.consumed_at is None
+            and recent.created_at
+            and recent.created_at > now - timedelta(seconds=get_settings().auth_code_resend_cooldown_seconds)
+        ):
             return  # neutral response and resend bound
         code = self.provider.generate() if hasattr(self.provider, "generate") else f"{secrets.randbelow(1_000_000):06d}"
         db.add(AuthenticationCode(email_key=email_key, code_hash=protected(code), expires_at=now + timedelta(minutes=get_settings().auth_code_ttl_minutes)))

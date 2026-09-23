@@ -365,6 +365,7 @@ export interface DeviationResponseResult {
 export interface TrustedContactCreateRequest {
   session_id: string;
   contact_reference: string;
+  phone_number?: string | null;
   display_name: string;
   relationship_label: string;
 }
@@ -372,6 +373,7 @@ export interface TrustedContactCreateRequest {
 export interface TrustedContactResponse {
   contact_id: string;
   contact_reference: string;
+  phone_number: string | null;
   display_name: string;
   relationship_label: string;
   verification_status: string;

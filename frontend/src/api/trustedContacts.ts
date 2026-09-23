@@ -62,6 +62,21 @@ export async function verifyTrustedContact(
   );
 }
 
+export async function generateTrustedContactVerificationCode(
+  contactId: string,
+  sessionId?: string,
+): Promise<TrustedContactResponse> {
+  const sid = sessionId || getEphemeralSessionId();
+  return api<TrustedContactResponse>(
+    `/trusted-contacts/${encodeURIComponent(contactId)}/verification-code`,
+    {
+      method: "POST",
+      body: JSON.stringify({ session_id: sid }),
+    },
+    false,
+  );
+}
+
 export async function revokeTrustedContact(
   contactId: string,
   sessionId?: string,

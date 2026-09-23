@@ -27,6 +27,7 @@ from app.modules.trips.schemas import (
     TripResponse,
     TrustedContactCreateRequest,
     TrustedContactResponse,
+    TrustedContactVerificationCodeRequest,
     TrustedContactVerifyRequest,
 )
 from app.modules.trips.service import TripFailure, TripService
@@ -75,6 +76,8 @@ FAILURES = {
     "contact_not_found": (404, "CONTACT_NOT_FOUND", "Trusted contact was not found."),
     "contact_conflict": (409, "CONTACT_CONFLICT", "Trusted contact already exists."),
     "contact_revoked": (409, "CONTACT_REVOKED", "Trusted contact has been revoked."),
+    "contact_already_verified": (409, "CONTACT_ALREADY_VERIFIED", "Trusted contact is already verified."),
+    "development_only": (403, "DEVELOPMENT_ONLY", "This action is available in development only."),
     "verification_expired": (410, "VERIFICATION_EXPIRED", "Verification token has expired."),
     "invalid_verification": (400, "INVALID_VERIFICATION", "Verification token is invalid."),
     "verification_delivery_unavailable": (503, "VERIFICATION_DELIVERY_UNAVAILABLE", "Verification delivery is unavailable."),
@@ -299,6 +302,22 @@ def verify_trusted_contact(
 ) -> TrustedContactResponse | JSONResponse:
     try:
         return service.verify_contact(db, contact_id, payload)
+    except TripFailure as exc:
+        return failure(request, exc)
+
+
+@router.post(
+    "/trusted-contacts/{contact_id}/verification-code",
+    response_model=TrustedContactResponse,
+)
+def generate_trusted_contact_verification_code(
+    contact_id: str,
+    request: Request,
+    payload: TrustedContactVerificationCodeRequest,
+    db: Session = Depends(get_transactional_db),
+) -> TrustedContactResponse | JSONResponse:
+    try:
+        return service.generate_contact_verification_code(db, contact_id, payload)
     except TripFailure as exc:
         return failure(request, exc)
 

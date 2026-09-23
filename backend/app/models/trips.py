@@ -122,6 +122,7 @@ class TrustedContact(Base):
     )
     owner_session_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     contact_reference: Mapped[str] = mapped_column(String(128), nullable=False)
+    phone_number: Mapped[str | None] = mapped_column(String(32))
     display_name: Mapped[str] = mapped_column(String(128), nullable=False)
     relationship_label: Mapped[str] = mapped_column(String(64), nullable=False)
     verification_status: Mapped[str] = mapped_column(String(24), nullable=False, default="PENDING")

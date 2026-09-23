@@ -138,6 +138,7 @@ class TrustedContactCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     session_id: str = Field(min_length=1, max_length=128)
     contact_reference: str = Field(min_length=3, max_length=128)
+    phone_number: str | None = Field(default=None, max_length=32)
     display_name: str = Field(min_length=1, max_length=128)
     relationship_label: str = Field(min_length=1, max_length=64)
 
@@ -148,9 +149,15 @@ class TrustedContactVerifyRequest(BaseModel):
     verification_token: str = Field(min_length=6, max_length=128)
 
 
+class TrustedContactVerificationCodeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    session_id: str = Field(min_length=1, max_length=128)
+
+
 class TrustedContactResponse(BaseModel):
     contact_id: str
     contact_reference: str
+    phone_number: str | None = None
     display_name: str
     relationship_label: str
     verification_status: str

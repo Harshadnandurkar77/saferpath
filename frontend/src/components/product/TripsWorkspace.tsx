@@ -22,6 +22,7 @@ import {
 import {
   createSharingGrant,
   createTrustedContact,
+  generateTrustedContactVerificationCode,
   listTrustedContacts,
   revokeSharingGrant,
   revokeTrustedContact,
@@ -62,6 +63,7 @@ export function TripsWorkspace() {
   const [isAddContactOpen, setIsAddContactOpen] = useState(false);
   const [contactName, setContactName] = useState("");
   const [contactReference, setContactReference] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
   const [relationship, setRelationship] = useState("Family");
   const [verificationInput, setVerificationInput] = useState<{
     id: string;
@@ -82,6 +84,8 @@ export function TripsWorkspace() {
       ) {
         sessionStorage.removeItem("saferpath_current_trip_id");
         sessionStorage.removeItem("saferpath-active-trip");
+        setActiveRoute(null);
+        setActiveTripId(null);
       }
     } catch {
       // Trip not found or closed
@@ -102,10 +106,42 @@ export function TripsWorkspace() {
     void fetchContacts();
     if (activeTripId) {
       void fetchTrip(activeTripId);
+
+      const sseUrl = `/trips//stream?token=`;
+      const evtSource = new EventSource(sseUrl);
+
+      evtSource.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data && data.trip_id) {
+            setTripState(data);
+            if (
+              data.status === "STOPPED" ||
+              data.status === "COMPLETED" ||
+              data.status === "EXPIRED"
+            ) {
+              sessionStorage.removeItem("saferpath_current_trip_id");
+              sessionStorage.removeItem("saferpath-active-trip");
+              setActiveRoute(null);
+              setActiveTripId(null);
+              evtSource.close();
+            }
+          }
+        } catch {
+          return;
+        }
+      };
+
       const interval = setInterval(() => {
-        void fetchTrip(activeTripId);
+        if (evtSource.readyState === EventSource.CLOSED) {
+          void fetchTrip(activeTripId);
+        }
       }, 10000);
-      return () => clearInterval(interval);
+
+      return () => {
+        evtSource.close();
+        clearInterval(interval);
+      };
     }
   }, [activeTripId, fetchContacts, fetchTrip]);
 
@@ -182,17 +218,38 @@ export function TripsWorkspace() {
       const newContact = await createTrustedContact({
         display_name: contactName.trim(),
         contact_reference: contactReference.trim(),
+        phone_number: contactPhone.trim() || null,
         relationship_label: relationship,
       });
       setContacts((prev) => [newContact, ...prev]);
       setIsAddContactOpen(false);
       setContactName("");
       setContactReference("");
-      setActionMessage("Contact added. Enter the verification code sent to your trusted contact.");
+      setContactPhone("");
+      setActionMessage(
+        "Contact added. Enter the verification code sent to your trusted contact.",
+      );
     } catch (err) {
       setErrorMessage(
         err instanceof Error ? err.message : "Failed to add contact.",
       );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGenerateVerificationCode = async (contactId: string) => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    try {
+      const contact = await generateTrustedContactVerificationCode(contactId);
+      setContacts((prev) =>
+        prev.map((item) => item.contact_id === contact.contact_id ? contact : item),
+      );
+      setVerificationInput({ id: contactId, token: "" });
+      setActionMessage("Verification code generated. Check the backend terminal.");
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "Could not generate verification code.");
     } finally {
       setIsLoading(false);
     }
@@ -476,11 +533,20 @@ export function TripsWorkspace() {
                 <div className="min-h-[320px] overflow-hidden rounded-xl">
                   <SaferPathMap
                     className="h-[320px] w-full"
-                    routes={[{ id: activeRoute.id, label: "Active route", coordinates: activeRoute.geometry, context: "good" }]}
+                    routes={[
+                      {
+                        id: activeRoute.id,
+                        label: "Active route",
+                        coordinates: activeRoute.geometry,
+                        context: "good",
+                      },
+                    ]}
                     selectedRoute={activeRoute.id}
                     helpPoints={[]}
                     originPoint={activeRoute.geometry[0]}
-                    destinationPoint={activeRoute.geometry[activeRoute.geometry.length - 1]}
+                    destinationPoint={
+                      activeRoute.geometry[activeRoute.geometry.length - 1]
+                    }
                     currentLocation={currentLocation}
                     breadcrumbCoordinates={breadcrumbs}
                   />
@@ -488,10 +554,29 @@ export function TripsWorkspace() {
                 <ActiveTripTracker
                   tripId={activeTripId}
                   routeCoordinates={activeRoute.geometry}
-                  destination={{ latitude: activeRoute.geometry[activeRoute.geometry.length - 1][1], longitude: activeRoute.geometry[activeRoute.geometry.length - 1][0], label: "Destination" }}
-                  onLocationUpdate={(location, trail) => { setCurrentLocation(location); setBreadcrumbs(trail); }}
-                  onTripCompleted={() => { sessionStorage.removeItem("saferpath_current_trip_id"); sessionStorage.removeItem("saferpath-active-trip"); setActiveTripId(null); setTripState(null); }}
-                  onStopTrip={() => { sessionStorage.removeItem("saferpath_current_trip_id"); sessionStorage.removeItem("saferpath-active-trip"); setActiveTripId(null); setTripState(null); }}
+                  destination={{
+                    latitude:
+                      activeRoute.geometry[activeRoute.geometry.length - 1][1],
+                    longitude:
+                      activeRoute.geometry[activeRoute.geometry.length - 1][0],
+                    label: "Destination",
+                  }}
+                  onLocationUpdate={(location, trail) => {
+                    setCurrentLocation(location);
+                    setBreadcrumbs(trail);
+                  }}
+                  onTripCompleted={() => {
+                    sessionStorage.removeItem("saferpath_current_trip_id");
+                    sessionStorage.removeItem("saferpath-active-trip");
+                    setActiveTripId(null);
+                    setTripState(null);
+                  }}
+                  onStopTrip={() => {
+                    sessionStorage.removeItem("saferpath_current_trip_id");
+                    sessionStorage.removeItem("saferpath-active-trip");
+                    setActiveTripId(null);
+                    setTripState(null);
+                  }}
                 />
               </div>
             )}
@@ -565,7 +650,7 @@ export function TripsWorkspace() {
               or external notifications.
             </p>
 
-            <div className="mt-4 grid gap-4 sm:grid-cols-3">
+            <div className="mt-4 grid gap-4 sm:grid-cols-4">
               <div>
                 <label className="block text-xs font-semibold text-[#62706a]">
                   Display Name
@@ -589,6 +674,18 @@ export function TripsWorkspace() {
                   placeholder="e.g. priya@example.com"
                   value={contactReference}
                   onChange={(e) => setContactReference(e.target.value)}
+                  className="mt-1 w-full border border-[#d8ddd7] p-2 text-xs outline-none focus:border-[#16756c]"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-[#62706a]">
+                  Phone Number
+                </label>
+                <input
+                  type="tel"
+                  placeholder="e.g. +91 98765 43210"
+                  value={contactPhone}
+                  onChange={(e) => setContactPhone(e.target.value)}
                   className="mt-1 w-full border border-[#d8ddd7] p-2 text-xs outline-none focus:border-[#16756c]"
                 />
               </div>
@@ -703,16 +800,12 @@ export function TripsWorkspace() {
                 <div className="flex items-center gap-2">
                   {contact.verification_status !== "VERIFIED" && (
                     <button
-                      onClick={() =>
-                        setVerificationInput({
-                          id: contact.contact_id,
-                          token: "",
-                        })
-                      }
+                      onClick={() => void handleGenerateVerificationCode(contact.contact_id)}
+                      disabled={isLoading}
                       className="flex items-center gap-1 border border-[#16756c] px-2.5 py-1.5 text-xs font-semibold text-[#075b53] hover:bg-[#dcefe9]"
                     >
                       <UserCheck className="h-3.5 w-3.5" />
-                      Verify
+                      Generate verification code
                     </button>
                   )}
 

@@ -188,14 +188,14 @@ export function HomeView() {
         setOriginText("");
         setOriginPoint(null);
         setError(
-          `Location access was not granted (${err.message}). Please enter your starting coordinates manually.`,
+          `Location access was not granted (${err.message}). Please choose a starting place instead.`,
         );
       },
       { enableHighAccuracy: true, timeout: 10000 },
     );
   };
 
-  // Execute Route Planning — rejects if endpoints missing, NO silent pilot fallback
+  // Execute Route Planning — requires user-selected endpoints, with no location fallback.
   const handlePlanRoute = async () => {
     const startPt = originPoint;
     const endPt = destPoint;
@@ -266,6 +266,14 @@ export function HomeView() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const clearRouteResults = () => {
+    setComparison(null);
+    setContexts({});
+    setHelpPoints([]);
+    setSelectedRouteId("");
+    setSelectedHelpPointRef(null);
   };
 
   // Convert routes for MapLibre
@@ -375,8 +383,7 @@ export function HomeView() {
       const last = selectedRoute.geometry[selectedRoute.geometry.length - 1];
       return { longitude: last[0], latitude: last[1] };
     }
-    const parsed = destPoint || parseCoordinateInput(destText);
-    return parsed || { longitude: 72.84, latitude: 19.054 };
+    return destPoint;
   }, [selectedRoute, destPoint, destText]);
 
   // Handle dynamic route updates from Smart Deviation re-evaluation
@@ -418,7 +425,7 @@ export function HomeView() {
             {greeting}
           </h2>
           <p className="mt-1 text-xs text-[#53615a]">
-            Enter your journey coordinates to evaluate street lighting,
+            Search your journey endpoints to evaluate street lighting,
             pedestrian flow, and nearby assistance points.
           </p>
         </div>
@@ -435,7 +442,7 @@ export function HomeView() {
           {/* Starting Location Search */}
           <PlaceSearch
             label="Starting from"
-            placeholder="Search place, landmark, street, or enter coords..."
+            placeholder="Search place, landmark, or street..."
             initialValue={originText}
             pinColor="teal"
             showCurrentLocationOption={true}
@@ -443,11 +450,17 @@ export function HomeView() {
             onSelect={(place) => {
               setOriginText(place.name);
               setOriginPoint(place.point);
+              clearRouteResults();
               setError(null);
+            }}
+            onQueryChange={() => {
+              setOriginPoint(null);
+              clearRouteResults();
             }}
             onClear={() => {
               setOriginText("");
               setOriginPoint(null);
+              clearRouteResults();
             }}
           />
 
@@ -460,11 +473,17 @@ export function HomeView() {
             onSelect={(place) => {
               setDestText(place.name);
               setDestPoint(place.point);
+              clearRouteResults();
               setError(null);
+            }}
+            onQueryChange={() => {
+              setDestPoint(null);
+              clearRouteResults();
             }}
             onClear={() => {
               setDestText("");
               setDestPoint(null);
+              clearRouteResults();
             }}
           />
 
@@ -537,7 +556,7 @@ export function HomeView() {
         </div>
 
         {/* Active Trip Tracker Panel if running */}
-        {activeTripId && selectedRoute && (
+        {activeTripId && selectedRoute && selectedRouteDestCoord && (
           <div className="p-5 border-b border-[#e2e6e1] bg-[#f0f7f5]">
             <ActiveTripTracker
               tripId={activeTripId}
@@ -707,11 +726,9 @@ export function HomeView() {
                 Enter your journey endpoints
               </h3>
               <p className="mt-1 text-xs text-[#53615a] max-w-xs mx-auto">
-                Type starting and destination coordinates (e.g. 19.054, 72.828
-                to 19.054, 72.840) or use current location to compare lighting,
-                footpaths, and help points.
-                Search for your starting point and destination, then compare
-                available routes and their local context.
+                Search for your starting point and destination, or use your
+                current location, then compare available routes and their local
+                context.
               </p>
             </div>
           )}
